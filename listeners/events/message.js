@@ -1,7 +1,7 @@
 import { runAgent } from '../../agent/index.js';
 import { sessionStore } from '../../thread-context/index.js';
 import { buildFeedbackBlocks } from '../views/feedback-builder.js';
-import { detectCommitment } from '../../sevices/commitment-detector.js';
+import { detectCommitment } from '../../services/commitment-detector.js';
 /**
  * @param {import('@slack/types').MessageEvent} event
  * @returns {event is import('@slack/types').GenericMessageEvent}
