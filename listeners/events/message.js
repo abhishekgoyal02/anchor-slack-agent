@@ -1,7 +1,9 @@
 import { runAgent } from '../../agent/index.js';
-import { sessionStore } from '../../thread-context/index.js';
-import { buildFeedbackBlocks } from '../views/feedback-builder.js';
 import { detectCommitment } from '../../services/commitment-detector.js';
+import { sessionStore } from '../../thread-context/index.js';
+import { buildCommitmentCard } from '../views/commitment-card.js';
+import { buildFeedbackBlocks } from '../views/feedback-builder.js';
+
 /**
  * @param {import('@slack/types').MessageEvent} event
  * @returns {event is import('@slack/types').GenericMessageEvent}
@@ -40,14 +42,15 @@ export async function handleMessage({ client, context, event, logger, say, saySt
     const channelId = event.channel;
     const text = event.text || '';
     const isCommitment = detectCommitment(text);
-  if (isCommitment) {
-    await say({
-      text: `⚓ Potential commitment detected:\n\n"${text}"`,
-      thread_ts: event.thread_ts || event.ts,
-    });
+    if (isCommitment) {
+      await say({
+        blocks: buildCommitmentCard(text),
+        text: `⚓ Potential commitment detected: "${text}"`,
+        thread_ts: event.thread_ts || event.ts,
+      });
 
-    return;
-  }
+      return;
+    }
     const threadTs = event.thread_ts || event.ts;
     const userId = /** @type {string} */ (context.userId);
 
