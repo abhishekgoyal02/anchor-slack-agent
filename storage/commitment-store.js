@@ -10,7 +10,7 @@ const db = new sqlite3.Database(DB_PATH);
 /**
  * Promisified wrapper around db.run.
  * @param {string} sql
- * @param {Array} params
+ * @param {unknown[]} params
  * @returns {Promise<{ lastID: number, changes: number }>}
  */
 function run(sql, params = []) {
@@ -25,7 +25,7 @@ function run(sql, params = []) {
 /**
  * Promisified wrapper around db.get.
  * @param {string} sql
- * @param {Array} params
+ * @param {unknown[]} params
  * @returns {Promise<object | undefined>}
  */
 function get(sql, params = []) {
@@ -40,7 +40,7 @@ function get(sql, params = []) {
 /**
  * Promisified wrapper around db.all.
  * @param {string} sql
- * @param {Array} params
+ * @param {unknown[]} params
  * @returns {Promise<Array<object>>}
  */
 function all(sql, params = []) {

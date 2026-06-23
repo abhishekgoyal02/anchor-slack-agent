@@ -1,7 +1,7 @@
 /**
  * Build a commitment confirmation card.
  * @param {string} messageText
- * @returns {Array}
+ * @returns {import('@slack/types').KnownBlock[]}
  */
 export function buildCommitmentCard(messageText) {
   return [
