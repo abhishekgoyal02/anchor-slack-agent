@@ -16,3 +16,7 @@ node_modules/
 
 # OAuth
 data/
+
+# SQLite
+*.db
+.slack/apps.json
