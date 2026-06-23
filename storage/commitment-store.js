@@ -72,10 +72,12 @@ const initPromise = run(`
  */
 export async function saveCommitment({ text, userId, channelId, threadTs }) {
   await initPromise;
-  const { lastID } = await run(
-    'INSERT INTO commitments (text, user_id, channel_id, thread_ts) VALUES (?, ?, ?, ?)',
-    [text, userId, channelId, threadTs],
-  );
+  const { lastID } = await run('INSERT INTO commitments (text, user_id, channel_id, thread_ts) VALUES (?, ?, ?, ?)', [
+    text,
+    userId,
+    channelId,
+    threadTs,
+  ]);
   return lastID;
 }
 
@@ -96,4 +98,15 @@ export async function getCommitmentById(id) {
 export async function getAllOpenCommitments() {
   await initPromise;
   return all('SELECT * FROM commitments WHERE status = ? ORDER BY created_at ASC', ['open']);
+}
+
+/**
+ * Find an open commitment by thread and text.
+ * @param {string} threadTs
+ * @param {string} text
+ * @returns {Promise<object | undefined>}
+ */
+export async function findOpenCommitmentByThreadAndText(threadTs, text) {
+  await initPromise;
+  return get('SELECT * FROM commitments WHERE thread_ts = ? AND text = ? AND status = ?', [threadTs, text, 'open']);
 }
