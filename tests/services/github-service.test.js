@@ -7,6 +7,7 @@ import {
   formatIssueTitle,
   GitHubServiceError,
   getGitHubConfig,
+  getIssue,
 } from '../../services/github-service.js';
 
 describe('github-service', () => {
@@ -97,6 +98,61 @@ describe('github-service', () => {
     assert.match(logMessages[0], /url=https:\/\/api\.github\.com\/repos\/owner\/repo\/issues/);
     assert.match(logMessages[0], /status=404/);
     assert.match(logMessages[0], /response_body=\{"message":"Not Found"\}/);
+    assert.doesNotMatch(logMessages[0], /token/);
+  });
+
+  it('gets a GitHub issue and returns normalized status', async () => {
+    let request;
+    const fetchImpl = async (url, options) => {
+      request = { url, options };
+      return {
+        ok: true,
+        json: async () => ({
+          number: 12,
+          state: 'closed',
+          html_url: 'https://github.com/owner/repo/issues/12',
+        }),
+      };
+    };
+
+    const issue = await getIssue(12, {
+      config: { token: 'token', owner: 'owner', repo: 'repo' },
+      fetchImpl,
+    });
+
+    assert.deepStrictEqual(issue, {
+      number: 12,
+      state: 'closed',
+      url: 'https://github.com/owner/repo/issues/12',
+    });
+    assert.strictEqual(request.url, 'https://api.github.com/repos/owner/repo/issues/12');
+    assert.strictEqual(request.options.method, 'GET');
+    assert.strictEqual(request.options.headers.Authorization, 'Bearer token');
+  });
+
+  it('logs GitHub issue lookup failures without exposing tokens', async () => {
+    const logMessages = [];
+    const fetchImpl = async () => ({
+      ok: false,
+      status: 403,
+      text: async () => '{"message":"API rate limit exceeded"}',
+    });
+
+    await assert.rejects(
+      getIssue(12, {
+        config: { token: 'token', owner: 'owner', repo: 'repo' },
+        fetchImpl,
+        logger: { error: (message) => logMessages.push(message) },
+      }),
+      /GitHub issue fetch failed/,
+    );
+
+    assert.strictEqual(logMessages.length, 1);
+    assert.match(logMessages[0], /owner=owner/);
+    assert.match(logMessages[0], /repo=repo/);
+    assert.match(logMessages[0], /url=https:\/\/api\.github\.com\/repos\/owner\/repo\/issues\/12/);
+    assert.match(logMessages[0], /status=403/);
+    assert.match(logMessages[0], /response_body=\{"message":"API rate limit exceeded"\}/);
     assert.doesNotMatch(logMessages[0], /token/);
   });
 });

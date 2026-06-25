@@ -17,6 +17,14 @@ const GITHUB_API_VERSION = '2022-11-28';
 
 /**
  * @typedef {{
+ *   number: number,
+ *   state: string,
+ *   url: string,
+ * }} GitHubIssueStatus
+ */
+
+/**
+ * @typedef {{
  *   token: string,
  *   owner: string,
  *   repo: string,
@@ -149,6 +157,57 @@ export async function createIssue(input, options = {}) {
 
   return {
     number: data.number,
+    url: data.html_url,
+  };
+}
+
+/**
+ * Get a GitHub issue by number.
+ * @param {number} issueNumber
+ * @param {{ fetchImpl?: typeof fetch, config?: GitHubConfig, logger?: GitHubLogger }} [options]
+ * @returns {Promise<GitHubIssueStatus>}
+ */
+export async function getIssue(issueNumber, options = {}) {
+  const config = options.config ?? getGitHubConfig();
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const logger = options.logger;
+  const url = `https://api.github.com/repos/${config.owner}/${config.repo}/issues/${issueNumber}`;
+
+  logger?.debug?.(`Fetching GitHub issue: owner=${config.owner}, repo=${config.repo}, url=${url}`);
+
+  const response = await fetchImpl(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${config.token}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': GITHUB_API_VERSION,
+    },
+  }).catch((error) => {
+    logger?.error?.(
+      `GitHub issue fetch request failed: owner=${config.owner}, repo=${config.repo}, url=${url}, error=${error}`,
+    );
+    throw new GitHubServiceError('GitHub issue fetch request failed.', { cause: error });
+  });
+
+  if (!response.ok) {
+    const responseBody = await readResponseBody(response);
+    logger?.error?.(
+      `GitHub issue fetch failed: owner=${config.owner}, repo=${config.repo}, url=${url}, status=${response.status}, response_body=${responseBody}`,
+    );
+    throw new GitHubServiceError('GitHub issue fetch failed.', { status: response.status });
+  }
+
+  const data = await response.json();
+  if (typeof data.number !== 'number' || typeof data.state !== 'string' || typeof data.html_url !== 'string') {
+    logger?.error?.(
+      `GitHub issue fetch returned an invalid response: owner=${config.owner}, repo=${config.repo}, url=${url}`,
+    );
+    throw new GitHubServiceError('GitHub issue fetch returned an invalid response.');
+  }
+
+  return {
+    number: data.number,
+    state: data.state,
     url: data.html_url,
   };
 }

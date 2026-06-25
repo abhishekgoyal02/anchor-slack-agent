@@ -1,7 +1,13 @@
 import assert from 'node:assert';
 import { describe, it } from 'node:test';
 
-import { getCommitmentById, saveCommitment, updateCommitmentGithubMetadata } from '../../storage/commitment-store.js';
+import {
+  getCommitmentById,
+  getOpenCommitmentsWithGithubIssues,
+  markCommitmentCompleted,
+  saveCommitment,
+  updateCommitmentGithubMetadata,
+} from '../../storage/commitment-store.js';
 
 describe('commitment-store', () => {
   it('saves a commitment and returns the inserted ID', async () => {
@@ -40,6 +46,55 @@ describe('commitment-store', () => {
       issueNumber: 12,
       issueUrl: 'https://github.com/owner/repo/issues/12',
     });
+
+    assert.strictEqual(updated, false);
+  });
+
+  it('loads only open commitments linked to GitHub issues', async () => {
+    const linkedThreadTs = `T-linked-${Date.now()}`;
+    const unlinkedThreadTs = `T-unlinked-${Date.now()}`;
+    const linkedId = await saveCommitment({
+      text: `Linked commitment ${Date.now()}`,
+      userId: 'U123',
+      channelId: 'C123',
+      threadTs: linkedThreadTs,
+    });
+    await saveCommitment({
+      text: `Unlinked commitment ${Date.now()}`,
+      userId: 'U123',
+      channelId: 'C123',
+      threadTs: unlinkedThreadTs,
+    });
+    await updateCommitmentGithubMetadata(linkedId, {
+      issueNumber: 99,
+      issueUrl: 'https://github.com/owner/repo/issues/99',
+    });
+
+    const linkedCommitments = await getOpenCommitmentsWithGithubIssues();
+
+    assert.ok(linkedCommitments.some((commitment) => commitment.id === linkedId));
+    assert.ok(linkedCommitments.every((commitment) => commitment.github_issue_number !== null));
+  });
+
+  it('marks a commitment completed with completed_at', async () => {
+    const id = await saveCommitment({
+      text: `Completable commitment ${Date.now()}`,
+      userId: 'U123',
+      channelId: 'C123',
+      threadTs: `T-complete-${Date.now()}`,
+    });
+
+    const updated = await markCommitmentCompleted(id);
+    const commitment = await getCommitmentById(id);
+
+    assert.strictEqual(updated, true);
+    assert.strictEqual(commitment.status, 'completed');
+    assert.strictEqual(typeof commitment.completed_at, 'string');
+    assert.ok(commitment.completed_at.length > 0);
+  });
+
+  it('returns false when completing a missing commitment', async () => {
+    const updated = await markCommitmentCompleted(-1);
 
     assert.strictEqual(updated, false);
   });

@@ -74,6 +74,10 @@ const initPromise = run(`
   if (!columnNames.has('github_issue_url')) {
     await run('ALTER TABLE commitments ADD COLUMN github_issue_url TEXT');
   }
+
+  if (!columnNames.has('completed_at')) {
+    await run('ALTER TABLE commitments ADD COLUMN completed_at TEXT');
+  }
 });
 
 /**
@@ -109,6 +113,20 @@ export async function updateCommitmentGithubMetadata(id, { issueNumber, issueUrl
 }
 
 /**
+ * Mark a commitment as completed.
+ * @param {number} id
+ * @returns {Promise<boolean>} True when a row was updated.
+ */
+export async function markCommitmentCompleted(id) {
+  await initPromise;
+  const { changes } = await run("UPDATE commitments SET status = ?, completed_at = datetime('now') WHERE id = ?", [
+    'completed',
+    id,
+  ]);
+  return changes > 0;
+}
+
+/**
  * Get a single commitment by ID.
  * @param {number} id
  * @returns {Promise<object | undefined>}
@@ -125,6 +143,17 @@ export async function getCommitmentById(id) {
 export async function getAllOpenCommitments() {
   await initPromise;
   return all('SELECT * FROM commitments WHERE status = ? ORDER BY created_at ASC', ['open']);
+}
+
+/**
+ * Get all open commitments linked to GitHub issues.
+ * @returns {Promise<Array<object>>}
+ */
+export async function getOpenCommitmentsWithGithubIssues() {
+  await initPromise;
+  return all('SELECT * FROM commitments WHERE status = ? AND github_issue_number IS NOT NULL ORDER BY created_at ASC', [
+    'open',
+  ]);
 }
 
 /**
