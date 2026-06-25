@@ -63,7 +63,18 @@ const initPromise = run(`
     status TEXT NOT NULL DEFAULT 'open',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )
-`);
+`).then(async () => {
+  const columns = /** @type {Array<{ name: string }>} */ (await all('PRAGMA table_info(commitments)'));
+  const columnNames = new Set(columns.map((column) => column.name));
+
+  if (!columnNames.has('github_issue_number')) {
+    await run('ALTER TABLE commitments ADD COLUMN github_issue_number INTEGER');
+  }
+
+  if (!columnNames.has('github_issue_url')) {
+    await run('ALTER TABLE commitments ADD COLUMN github_issue_url TEXT');
+  }
+});
 
 /**
  * Save a confirmed commitment.
@@ -79,6 +90,22 @@ export async function saveCommitment({ text, userId, channelId, threadTs }) {
     threadTs,
   ]);
   return lastID;
+}
+
+/**
+ * Store GitHub metadata for a specific commitment.
+ * @param {number} id
+ * @param {{ issueNumber: number, issueUrl: string }} metadata
+ * @returns {Promise<boolean>} True when a row was updated.
+ */
+export async function updateCommitmentGithubMetadata(id, { issueNumber, issueUrl }) {
+  await initPromise;
+  const { changes } = await run('UPDATE commitments SET github_issue_number = ?, github_issue_url = ? WHERE id = ?', [
+    issueNumber,
+    issueUrl,
+    id,
+  ]);
+  return changes > 0;
 }
 
 /**

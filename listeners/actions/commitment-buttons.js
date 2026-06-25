@@ -1,4 +1,14 @@
-import { findOpenCommitmentByThreadAndText, saveCommitment } from '../../storage/commitment-store.js';
+import { createIssue } from '../../services/github-service.js';
+import {
+  findOpenCommitmentByThreadAndText,
+  saveCommitment,
+  updateCommitmentGithubMetadata,
+} from '../../storage/commitment-store.js';
+import {
+  buildCommitmentAlreadyTrackedCard,
+  buildCommitmentConfirmedCard,
+  buildCommitmentIgnoredCard,
+} from '../views/commitment-card.js';
 
 /**
  * @typedef {{
@@ -58,25 +68,6 @@ async function postFriendlyEphemeral(client, { channelId, userId, threadTs }, te
 }
 
 /**
- * Build final-state blocks for commitment interactions.
- * @param {string} title
- * @param {string} text
- * @param {string} detail
- * @returns {import('@slack/types').KnownBlock[]}
- */
-function buildCommitmentResultBlocks(title, text, detail) {
-  return [
-    {
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: `${title}\n\n>${text}\n\n${detail}`,
-      },
-    },
-  ];
-}
-
-/**
  * Handle commitment confirmation interactions.
  * @param {import('@slack/bolt').AllMiddlewareArgs & import('@slack/bolt').SlackActionMiddlewareArgs} args
  * @returns {Promise<void>}
@@ -109,22 +100,39 @@ export async function handleCommitmentConfirm({ ack, body, client, logger }) {
         channel: channelId,
         ts: messageTs,
         text: '⚠️ Commitment Already Tracked',
-        blocks: buildCommitmentResultBlocks(
-          '⚠️ *Commitment Already Tracked*',
-          text,
-          'This commitment is already being tracked and does not need to be confirmed again.',
-        ),
+        blocks: buildCommitmentAlreadyTrackedCard(text),
       });
       return;
     }
 
-    await saveCommitment({ text, userId, channelId, threadTs });
+    const commitmentId = await saveCommitment({ text, userId, channelId, threadTs });
+    let issue;
+    let githubError = false;
+
+    try {
+      issue = await createIssue({ text, userId, threadTs }, { logger });
+      const updated = await updateCommitmentGithubMetadata(commitmentId, {
+        issueNumber: issue.number,
+        issueUrl: issue.url,
+      });
+
+      if (!updated) {
+        githubError = true;
+        logger.error(`Failed to update GitHub metadata for commitment ${commitmentId}: no row updated`);
+      }
+    } catch (githubIssueError) {
+      githubError = true;
+      logger.error(`Failed to create or link GitHub issue for commitment ${commitmentId}: ${githubIssueError}`);
+    }
 
     const updatePayload = {
       channel: channelId,
       ts: messageTs,
       text: '⚓ Commitment Confirmed',
-      blocks: buildCommitmentResultBlocks('⚓ *Commitment Confirmed*', text, '*Status:* Tracked'),
+      blocks:
+        issue && !githubError
+          ? buildCommitmentConfirmedCard(text, { issueNumber: issue.number, issueUrl: issue.url })
+          : buildCommitmentConfirmedCard(text, { githubError: true }),
     };
 
     logger.debug(`chat.update payload (Confirm): ${JSON.stringify(updatePayload)}`);
@@ -173,7 +181,7 @@ export async function handleCommitmentIgnore({ ack, body, client, logger }) {
       channel: channelId,
       ts: messageTs,
       text: '⚓ Commitment Ignored',
-      blocks: buildCommitmentResultBlocks('⚓ *Commitment Ignored*', text, 'No tracking record was created.'),
+      blocks: buildCommitmentIgnoredCard(text),
     };
 
     logger.debug(`chat.update payload (Ignore): ${JSON.stringify(updatePayload)}`);
