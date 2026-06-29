@@ -105,7 +105,13 @@ export async function handleCommitmentConfirm({ ack, body, client, logger }) {
       return;
     }
 
-    const commitmentId = await saveCommitment({ text, userId, channelId, threadTs });
+    const commitmentId = await saveCommitment({
+      text,
+      userId,
+      channelId,
+      threadTs,
+      messageTs,
+    });
     let issue;
     let githubError = false;
 

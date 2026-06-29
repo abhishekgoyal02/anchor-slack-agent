@@ -60,6 +60,7 @@ const initPromise = run(`
     user_id TEXT NOT NULL,
     channel_id TEXT NOT NULL,
     thread_ts TEXT NOT NULL,
+    message_ts TEXT,
     status TEXT NOT NULL DEFAULT 'open',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )
@@ -78,21 +79,51 @@ const initPromise = run(`
   if (!columnNames.has('completed_at')) {
     await run('ALTER TABLE commitments ADD COLUMN completed_at TEXT');
   }
+  if (!columnNames.has('message_ts')) {
+    await run('ALTER TABLE commitments ADD COLUMN message_ts TEXT');
+  }
 });
 
 /**
  * Save a confirmed commitment.
- * @param {{ text: string, userId: string, channelId: string, threadTs: string }} commitment
+ * @param {{
+ *   text: string,
+ *   userId: string,
+ *   channelId: string,
+ *   threadTs: string,
+ *   messageTs: string,
+ * }} commitment
  * @returns {Promise<number>} The ID of the inserted row.
  */
-export async function saveCommitment({ text, userId, channelId, threadTs }) {
+export async function saveCommitment({
+  text,
+  userId,
+  channelId,
+  threadTs,
+  messageTs,
+}) {
   await initPromise;
-  const { lastID } = await run('INSERT INTO commitments (text, user_id, channel_id, thread_ts) VALUES (?, ?, ?, ?)', [
-    text,
-    userId,
-    channelId,
-    threadTs,
-  ]);
+
+  const { lastID } = await run(
+    `
+      INSERT INTO commitments (
+        text,
+        user_id,
+        channel_id,
+        thread_ts,
+        message_ts
+      )
+      VALUES (?, ?, ?, ?, ?)
+    `,
+    [
+      text,
+      userId,
+      channelId,
+      threadTs,
+      messageTs,
+    ],
+  );
+
   return lastID;
 }
 

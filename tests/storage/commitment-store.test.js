@@ -16,6 +16,7 @@ describe('commitment-store', () => {
       userId: 'U123',
       channelId: 'C123',
       threadTs: `T-${Date.now()}`,
+      messageTs: `M-${Date.now()}`,
     });
 
     assert.strictEqual(typeof id, 'number');
@@ -28,6 +29,7 @@ describe('commitment-store', () => {
       userId: 'U123',
       channelId: 'C123',
       threadTs: `T-${Date.now()}`,
+      messageTs: `M-${Date.now()}`,
     });
 
     const updated = await updateCommitmentGithubMetadata(id, {
@@ -58,12 +60,14 @@ describe('commitment-store', () => {
       userId: 'U123',
       channelId: 'C123',
       threadTs: linkedThreadTs,
+      messageTs: `M-linked-${Date.now()}`,
     });
     await saveCommitment({
       text: `Unlinked commitment ${Date.now()}`,
       userId: 'U123',
       channelId: 'C123',
       threadTs: unlinkedThreadTs,
+      messageTs: `M-unlinked-${Date.now()}`,
     });
     await updateCommitmentGithubMetadata(linkedId, {
       issueNumber: 99,
@@ -82,6 +86,7 @@ describe('commitment-store', () => {
       userId: 'U123',
       channelId: 'C123',
       threadTs: `T-complete-${Date.now()}`,
+      messageTs: `M-complete-${Date.now()}`,
     });
 
     const updated = await markCommitmentCompleted(id);

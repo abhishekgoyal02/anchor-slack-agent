@@ -1,12 +1,20 @@
-import { getOpenCommitmentsWithGithubIssues, markCommitmentCompleted } from '../storage/commitment-store.js';
+import {
+  getOpenCommitmentsWithGithubIssues,
+  markCommitmentCompleted,
+} from '../storage/commitment-store.js';
 import { getIssue } from './github-service.js';
-
+import { buildCommitmentCompletedCard } from '../listeners/views/commitment-card.js';
 const DEFAULT_SYNC_INTERVAL_MS = 300000;
 
 /**
  * @typedef {{
  *   id: number,
+ *   text: string,
+ *   channel_id: string,
+ *   thread_ts: string,
+ *   message_ts: string,
  *   github_issue_number: number | null,
+ *   github_issue_url: string | null,
  * }} LinkedCommitment
  */
 
@@ -26,11 +34,13 @@ const DEFAULT_SYNC_INTERVAL_MS = 300000;
  *   loadCommitments?: () => Promise<Array<LinkedCommitment>>,
  *   fetchIssue?: typeof getIssue,
  *   completeCommitment?: typeof markCommitmentCompleted,
+ *   client?: import('@slack/web-api').WebClient,
  * }} [options]
  * @returns {Promise<{ checked: number, completed: number, failed: number }>}
  */
 export async function syncGitHubIssueStatuses(options = {}) {
   const logger = options.logger;
+  const client = options.client;
   const loadCommitments = options.loadCommitments ?? getOpenCommitmentsWithGithubIssues;
   const fetchIssue = options.fetchIssue ?? getIssue;
   const completeCommitment = options.completeCommitment ?? markCommitmentCompleted;
@@ -47,14 +57,36 @@ export async function syncGitHubIssueStatuses(options = {}) {
       const issue = await fetchIssue(commitment.github_issue_number, { logger });
       if (issue.state === 'closed') {
         const updated = await completeCommitment(commitment.id);
+      
         if (updated) {
           completed += 1;
+      
+          if (client && commitment.message_ts) {
+            try {
+              await client.chat.update({
+                channel: commitment.channel_id,
+                ts: commitment.message_ts,
+                text: '✅ Commitment Completed',
+                blocks: buildCommitmentCompletedCard(commitment.text, {
+                  issueNumber: issue.number,
+                  issueUrl: issue.url,
+                }),
+              });
+            } catch (slackError) {
+              logger?.error?.(
+                `Failed to update Slack message for commitment ${commitment.id}: ${slackError}`,
+              );
+            }
+          }
+      
           logger?.info?.(
             `Marked commitment completed from GitHub issue state: commitment_id=${commitment.id}, issue_number=${issue.number}`,
           );
         } else {
           failed += 1;
-          logger?.error?.(`Failed to mark commitment completed: commitment_id=${commitment.id}, no row updated`);
+          logger?.error?.(
+            `Failed to mark commitment completed: commitment_id=${commitment.id}, no row updated`,
+          );
         }
       }
     } catch (error) {
@@ -73,11 +105,18 @@ export async function syncGitHubIssueStatuses(options = {}) {
 
 /**
  * Start polling GitHub issue status.
- * @param {{ logger?: SyncLogger, intervalMs?: number, setIntervalImpl?: typeof setInterval }} [options]
+ * @param {{
+ *   logger?: SyncLogger,
+ *   client?: import('@slack/web-api').WebClient,
+ *   intervalMs?: number,
+ *   setIntervalImpl?: typeof setInterval,
+ * }} [options]
  * @returns {NodeJS.Timeout}
  */
+
 export function startSyncService(options = {}) {
   const logger = options.logger;
+  const client = options.client;
   const configuredIntervalMs = options.intervalMs;
   const intervalMs =
     typeof configuredIntervalMs === 'number' && Number.isFinite(configuredIntervalMs) && configuredIntervalMs > 0
@@ -87,7 +126,10 @@ export function startSyncService(options = {}) {
 
   logger?.info?.(`Starting GitHub issue status sync service: interval_ms=${intervalMs}`);
   const runSync = () => {
-    syncGitHubIssueStatuses({ logger }).catch((error) => {
+    syncGitHubIssueStatuses({
+      logger,
+      client,
+    }).catch((error) => {
       logger?.error?.(`GitHub issue status sync failed: ${error}`);
     });
   };
