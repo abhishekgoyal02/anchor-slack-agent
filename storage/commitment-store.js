@@ -8,6 +8,22 @@ const DB_PATH = join(__dirname, 'commitments.db');
 const db = new sqlite3.Database(DB_PATH);
 
 /**
+ * @typedef {{
+ *   id: number,
+ *   text: string,
+ *   user_id: string,
+ *   channel_id: string,
+ *   thread_ts: string,
+ *   message_ts: string | null,
+ *   status: 'open' | 'completed',
+ *   created_at: string,
+ *   github_issue_number: number | null,
+ *   github_issue_url: string | null,
+ *   completed_at: string | null,
+ * }} Commitment
+ */
+
+/**
  * Promisified wrapper around db.run.
  * @param {string} sql
  * @param {unknown[]} params
@@ -64,25 +80,30 @@ const initPromise = run(`
     status TEXT NOT NULL DEFAULT 'open',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )
-`).then(async () => {
-  const columns = /** @type {Array<{ name: string }>} */ (await all('PRAGMA table_info(commitments)'));
-  const columnNames = new Set(columns.map((column) => column.name));
+`)
+  .then(async () => {
+    const columns = /** @type {Array<{ name: string }>} */ (await all('PRAGMA table_info(commitments)'));
+    const columnNames = new Set(columns.map((column) => column.name));
 
-  if (!columnNames.has('github_issue_number')) {
-    await run('ALTER TABLE commitments ADD COLUMN github_issue_number INTEGER');
-  }
+    if (!columnNames.has('github_issue_number')) {
+      await run('ALTER TABLE commitments ADD COLUMN github_issue_number INTEGER');
+    }
 
-  if (!columnNames.has('github_issue_url')) {
-    await run('ALTER TABLE commitments ADD COLUMN github_issue_url TEXT');
-  }
+    if (!columnNames.has('github_issue_url')) {
+      await run('ALTER TABLE commitments ADD COLUMN github_issue_url TEXT');
+    }
 
-  if (!columnNames.has('completed_at')) {
-    await run('ALTER TABLE commitments ADD COLUMN completed_at TEXT');
-  }
-  if (!columnNames.has('message_ts')) {
-    await run('ALTER TABLE commitments ADD COLUMN message_ts TEXT');
-  }
-});
+    if (!columnNames.has('completed_at')) {
+      await run('ALTER TABLE commitments ADD COLUMN completed_at TEXT');
+    }
+    if (!columnNames.has('message_ts')) {
+      await run('ALTER TABLE commitments ADD COLUMN message_ts TEXT');
+    }
+  })
+  .catch((error) => {
+    console.error('Failed to initialize sqlite database:', error);
+    throw error;
+  });
 
 /**
  * Save a confirmed commitment.
@@ -95,13 +116,7 @@ const initPromise = run(`
  * }} commitment
  * @returns {Promise<number>} The ID of the inserted row.
  */
-export async function saveCommitment({
-  text,
-  userId,
-  channelId,
-  threadTs,
-  messageTs,
-}) {
+export async function saveCommitment({ text, userId, channelId, threadTs, messageTs }) {
   await initPromise;
 
   const { lastID } = await run(
@@ -115,13 +130,7 @@ export async function saveCommitment({
       )
       VALUES (?, ?, ?, ?, ?)
     `,
-    [
-      text,
-      userId,
-      channelId,
-      threadTs,
-      messageTs,
-    ],
+    [text, userId, channelId, threadTs, messageTs],
   );
 
   return lastID;
@@ -160,40 +169,49 @@ export async function markCommitmentCompleted(id) {
 /**
  * Get a single commitment by ID.
  * @param {number} id
- * @returns {Promise<object | undefined>}
+ * @returns {Promise<Commitment | undefined>}
  */
 export async function getCommitmentById(id) {
   await initPromise;
-  return get('SELECT * FROM commitments WHERE id = ?', [id]);
+  const row = await get('SELECT * FROM commitments WHERE id = ?', [id]);
+  return /** @type {Commitment | undefined} */ (row);
 }
 
 /**
  * Get all commitments with status "open".
- * @returns {Promise<Array<object>>}
+ * @returns {Promise<Commitment[]>}
  */
 export async function getAllOpenCommitments() {
   await initPromise;
-  return all('SELECT * FROM commitments WHERE status = ? ORDER BY created_at ASC', ['open']);
+  const rows = await all('SELECT * FROM commitments WHERE status = ? ORDER BY created_at ASC', ['open']);
+  return /** @type {Commitment[]} */ (rows);
 }
 
 /**
  * Get all open commitments linked to GitHub issues.
- * @returns {Promise<Array<object>>}
+ * @returns {Promise<Commitment[]>}
  */
 export async function getOpenCommitmentsWithGithubIssues() {
   await initPromise;
-  return all('SELECT * FROM commitments WHERE status = ? AND github_issue_number IS NOT NULL ORDER BY created_at ASC', [
-    'open',
-  ]);
+  const rows = await all(
+    'SELECT * FROM commitments WHERE status = ? AND github_issue_number IS NOT NULL ORDER BY created_at ASC',
+    ['open'],
+  );
+  return /** @type {Commitment[]} */ (rows);
 }
 
 /**
  * Find an open commitment by thread and text.
  * @param {string} threadTs
  * @param {string} text
- * @returns {Promise<object | undefined>}
+ * @returns {Promise<Commitment | undefined>}
  */
 export async function findOpenCommitmentByThreadAndText(threadTs, text) {
   await initPromise;
-  return get('SELECT * FROM commitments WHERE thread_ts = ? AND text = ? AND status = ?', [threadTs, text, 'open']);
+  const row = await get('SELECT * FROM commitments WHERE thread_ts = ? AND text = ? AND status = ?', [
+    threadTs,
+    text,
+    'open',
+  ]);
+  return /** @type {Commitment | undefined} */ (row);
 }

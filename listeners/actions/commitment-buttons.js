@@ -68,6 +68,34 @@ async function postFriendlyEphemeral(client, { channelId, userId, threadTs }, te
 }
 
 /**
+ * Validate commitment action payload or send fallback ephemeral message.
+ * @param {import('@slack/bolt').SlackAction} body
+ * @param {import('@slack/web-api').WebClient} client
+ * @param {any} logger
+ * @param {string} actionName
+ * @returns {Promise<CommitmentActionContext | null>}
+ */
+async function validateActionContext(body, client, logger, actionName) {
+  const actionContext = getCommitmentActionContext(body);
+  if (actionContext) {
+    return actionContext;
+  }
+
+  logger.warn(`Invalid commitment ${actionName} payload received`);
+  const bodyForFallback = /** @type {any} */ (body);
+  await postFriendlyEphemeral(
+    client,
+    {
+      channelId: bodyForFallback.channel?.id,
+      userId: bodyForFallback.user?.id,
+      threadTs: bodyForFallback.message?.thread_ts || bodyForFallback.message?.ts,
+    },
+    '⚠️ Unable to process this commitment. Please try again.',
+  );
+  return null;
+}
+
+/**
  * Handle commitment confirmation interactions.
  * @param {import('@slack/bolt').AllMiddlewareArgs & import('@slack/bolt').SlackActionMiddlewareArgs} args
  * @returns {Promise<void>}
@@ -75,21 +103,8 @@ async function postFriendlyEphemeral(client, { channelId, userId, threadTs }, te
 export async function handleCommitmentConfirm({ ack, body, client, logger }) {
   await ack();
 
-  const actionContext = getCommitmentActionContext(body);
-  const bodyForFallback = /** @type {any} */ (body);
-  if (!actionContext) {
-    logger.warn('Invalid commitment confirmation payload received');
-    await postFriendlyEphemeral(
-      client,
-      {
-        channelId: bodyForFallback.channel?.id,
-        userId: bodyForFallback.user?.id,
-        threadTs: bodyForFallback.message?.thread_ts || bodyForFallback.message?.ts,
-      },
-      '⚠️ Unable to process this commitment. Please try again.',
-    );
-    return;
-  }
+  const actionContext = await validateActionContext(body, client, logger, 'confirmation');
+  if (!actionContext) return;
 
   const { channelId, messageTs, text, threadTs, userId } = actionContext;
 
@@ -164,21 +179,8 @@ export async function handleCommitmentConfirm({ ack, body, client, logger }) {
 export async function handleCommitmentIgnore({ ack, body, client, logger }) {
   await ack();
 
-  const actionContext = getCommitmentActionContext(body);
-  const bodyForFallback = /** @type {any} */ (body);
-  if (!actionContext) {
-    logger.warn('Invalid commitment ignore payload received');
-    await postFriendlyEphemeral(
-      client,
-      {
-        channelId: bodyForFallback.channel?.id,
-        userId: bodyForFallback.user?.id,
-        threadTs: bodyForFallback.message?.thread_ts || bodyForFallback.message?.ts,
-      },
-      '⚠️ Unable to process this commitment. Please try again.',
-    );
-    return;
-  }
+  const actionContext = await validateActionContext(body, client, logger, 'ignore');
+  if (!actionContext) return;
 
   const { channelId, messageTs, text } = actionContext;
 

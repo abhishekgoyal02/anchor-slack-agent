@@ -81,37 +81,29 @@ export function buildCommitmentIgnoredCard(messageText) {
 }
 
 /**
- * Build final-state blocks for commitment interactions.
- * @param {string} title
- * @param {string} messageText
- * @param {string} detail
- * @returns {import('@slack/types').KnownBlock[]}
- */
-
-/**
  * Build a completed commitment card.
  * @param {string} messageText
  * @param {{ issueNumber?: number, issueUrl?: string }} [options]
  * @returns {import('@slack/types').KnownBlock[]}
  */
 export function buildCommitmentCompletedCard(messageText, options = {}) {
-  const details = [
-    '*Status:* Completed ✅',
-    '',
-    'Anchor detected that this commitment has been completed.',
-  ];
+  const details = ['*Status:* Completed ✅', '', 'Anchor detected that this commitment has been completed.'];
 
   if (options.issueNumber && options.issueUrl) {
     details.push('');
     details.push(`*GitHub Issue:* <${options.issueUrl}|#${options.issueNumber}> (Closed)`);
   }
 
-  return buildCommitmentResultCard(
-    '✅ *Commitment Completed*',
-    messageText,
-    details.join('\n'),
-  );
+  return buildCommitmentResultCard('✅ *Commitment Completed*', messageText, details.join('\n'));
 }
+
+/**
+ * Build final-state blocks for commitment interactions.
+ * @param {string} title
+ * @param {string} messageText
+ * @param {string} detail
+ * @returns {import('@slack/types').KnownBlock[]}
+ */
 function buildCommitmentResultCard(title, messageText, detail) {
   return [
     {

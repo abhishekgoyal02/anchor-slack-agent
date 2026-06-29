@@ -88,6 +88,8 @@ export async function handleMessage({ client, context, event, logger, say, saySt
     await say({
       text: ':warning: Something went wrong while processing your message. Please try again.',
       thread_ts: event.thread_ts || event.ts,
+    }).catch((sayError) => {
+      logger.error(`Failed to send error fallback message: ${sayError}`);
     });
   }
 }

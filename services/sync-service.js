@@ -1,9 +1,7 @@
-import {
-  getOpenCommitmentsWithGithubIssues,
-  markCommitmentCompleted,
-} from '../storage/commitment-store.js';
-import { getIssue } from './github-service.js';
 import { buildCommitmentCompletedCard } from '../listeners/views/commitment-card.js';
+import { getOpenCommitmentsWithGithubIssues, markCommitmentCompleted } from '../storage/commitment-store.js';
+import { getIssue } from './github-service.js';
+
 const DEFAULT_SYNC_INTERVAL_MS = 300000;
 
 /**
@@ -26,6 +24,31 @@ const DEFAULT_SYNC_INTERVAL_MS = 300000;
  *   error?: (message: string) => void,
  * }} SyncLogger
  */
+
+/**
+ * Helper to update Slack when a commitment is completed.
+ * @param {import('@slack/web-api').WebClient} client
+ * @param {LinkedCommitment} commitment
+ * @param {{ number: number, url: string }} issue
+ * @param {SyncLogger} [logger]
+ * @returns {Promise<void>}
+ */
+async function notifySlackCommitmentCompleted(client, commitment, issue, logger) {
+  if (!commitment.message_ts) return;
+  try {
+    await client.chat.update({
+      channel: commitment.channel_id,
+      ts: commitment.message_ts,
+      text: '✅ Commitment Completed',
+      blocks: buildCommitmentCompletedCard(commitment.text, {
+        issueNumber: issue.number,
+        issueUrl: issue.url,
+      }),
+    });
+  } catch (slackError) {
+    logger?.error?.(`Failed to update Slack message for commitment ${commitment.id}: ${slackError}`);
+  }
+}
 
 /**
  * Sync open linked commitments with their GitHub issue state.
@@ -57,36 +80,20 @@ export async function syncGitHubIssueStatuses(options = {}) {
       const issue = await fetchIssue(commitment.github_issue_number, { logger });
       if (issue.state === 'closed') {
         const updated = await completeCommitment(commitment.id);
-      
+
         if (updated) {
           completed += 1;
-      
-          if (client && commitment.message_ts) {
-            try {
-              await client.chat.update({
-                channel: commitment.channel_id,
-                ts: commitment.message_ts,
-                text: '✅ Commitment Completed',
-                blocks: buildCommitmentCompletedCard(commitment.text, {
-                  issueNumber: issue.number,
-                  issueUrl: issue.url,
-                }),
-              });
-            } catch (slackError) {
-              logger?.error?.(
-                `Failed to update Slack message for commitment ${commitment.id}: ${slackError}`,
-              );
-            }
+
+          if (client) {
+            await notifySlackCommitmentCompleted(client, commitment, issue, logger);
           }
-      
+
           logger?.info?.(
             `Marked commitment completed from GitHub issue state: commitment_id=${commitment.id}, issue_number=${issue.number}`,
           );
         } else {
           failed += 1;
-          logger?.error?.(
-            `Failed to mark commitment completed: commitment_id=${commitment.id}, no row updated`,
-          );
+          logger?.error?.(`Failed to mark commitment completed: commitment_id=${commitment.id}, no row updated`);
         }
       }
     } catch (error) {
