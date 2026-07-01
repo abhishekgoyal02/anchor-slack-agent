@@ -33,19 +33,11 @@ describe('commitment-search-service', () => {
     );
 
     assert.deepStrictEqual(calls, ['authentication']);
-    assert.deepStrictEqual(results, [
-      {
-        id: 12,
-        title: 'Authentication API',
-        status: 'Open',
-        assignee: 'U123',
-        githubIssue: 18,
-        createdAt: '2026-07-01 00:00:00',
-        updatedAt: '2026-07-01 00:00:00',
-        thread: 'T123',
-        channel: 'C123',
-      },
-    ]);
+    assert.strictEqual(results.length, 1);
+    assert.strictEqual(results[0].title, 'Authentication API');
+    assert.strictEqual(results[0].status, '🟡 Open');
+    assert.strictEqual(results[0].githubIssue, 'GitHub Issue #18');
+    assert.strictEqual(typeof results[0].created, 'string');
   });
 
   it('returns empty results without querying storage for blank input', async () => {

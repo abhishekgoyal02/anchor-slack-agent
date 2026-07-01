@@ -12,15 +12,11 @@ export const metadata = {
   },
   exampleOutput: [
     {
-      id: 12,
       title: 'Authentication API',
-      status: 'Open',
-      assignee: 'U123',
-      githubIssue: 18,
-      createdAt: '2026-07-01 10:00:00',
-      updatedAt: '2026-07-01 10:00:00',
-      thread: '1751344200.000000',
-      channel: 'C123',
+      status: '🟡 Open',
+      githubIssue: 'GitHub Issue #18',
+      created: 'Today',
+      assigneeName: 'Abhishek Goyal',
     },
   ],
 };

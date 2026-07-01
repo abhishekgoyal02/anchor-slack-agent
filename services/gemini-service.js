@@ -5,6 +5,15 @@ import { silentMcpLogger } from '../mcp/logger.js';
 
 const DEFAULT_MODEL = 'gemini-2.5-flash';
 const DEFAULT_MAX_TOOL_ITERATIONS = 5;
+const DEFAULT_TOOL_CALLING_SYSTEM_INSTRUCTION = [
+  'You are Anchor, a professional assistant responding for Slack users.',
+  'MCP tool outputs are application records, not raw data to dump.',
+  'Summarize results naturally and concisely instead of repeating every field.',
+  'Never mention or expose internal IDs, database terms, SQL, channels, threads, or implementation details.',
+  'When records include duplicate titles, clearly distinguish each one using user-facing fields such as status, GitHub issue, and created date.',
+  "When a search returns no commitments, respond naturally (for example: I couldn't find any commitments related to the query).",
+  'If a tool error appears, provide a brief, user-friendly explanation without technical internals.',
+].join(' ');
 
 /**
  * Error type used for Gemini service failures.
@@ -178,7 +187,10 @@ export class GeminiService {
     ];
     const toolCalls = [];
     const config = {
-      ...this.#buildGenerationConfig(options),
+      ...this.#buildGenerationConfig({
+        ...options,
+        systemInstruction: buildToolCallingSystemInstruction(options.systemInstruction),
+      }),
       ...buildToolConfig(mcpServer.listTools()),
     };
 
@@ -379,6 +391,18 @@ function normalizeFunctionArgs(args) {
   return {};
 }
 
+/**
+ * @param {string | undefined} overrideInstruction
+ * @returns {string}
+ */
+function buildToolCallingSystemInstruction(overrideInstruction) {
+  if (typeof overrideInstruction === 'string' && overrideInstruction.trim()) {
+    return `${DEFAULT_TOOL_CALLING_SYSTEM_INSTRUCTION} ${overrideInstruction.trim()}`;
+  }
+
+  return DEFAULT_TOOL_CALLING_SYSTEM_INSTRUCTION;
+}
+
 /** @type {GeminiService | null} */
 let defaultGeminiService = null;
 
@@ -406,7 +430,8 @@ export function getDefaultGeminiService() {
  * @returns {Promise<string>} Generated plain text.
  */
 export async function generateResponse(prompt, options = {}) {
-  return getDefaultGeminiService().generateText(prompt, options);
+  const result = await getDefaultGeminiService().generateTextWithTools(prompt, options);
+  return result.text;
 }
 
 export default GeminiService;

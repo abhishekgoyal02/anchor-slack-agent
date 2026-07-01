@@ -88,7 +88,7 @@ export class AnchorMcpServer {
         ok: false,
         error: {
           code: 'ToolNotFound',
-          message: `Tool not found: ${toolName}`,
+          message: "I couldn't run that action because it is not available.",
         },
       };
     }
@@ -123,8 +123,7 @@ export class AnchorMcpServer {
           ok: false,
           error: {
             code: 'ValidationError',
-            message: 'Tool input validation failed.',
-            details: error.issues,
+            message: "I couldn't complete that request because some details were invalid.",
           },
         };
       }
@@ -140,7 +139,7 @@ export class AnchorMcpServer {
         ok: false,
         error: {
           code: 'ExecutionError',
-          message: error instanceof Error ? error.message : 'Tool execution failed.',
+          message: "I couldn't complete that request right now. Please try again.",
         },
       };
     }

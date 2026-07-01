@@ -160,15 +160,10 @@ describe('gemini-service', () => {
               ok: true,
               result: [
                 {
-                  id: 12,
                   title: 'Authentication API',
-                  status: 'Open',
-                  assignee: 'U123',
-                  githubIssue: 18,
-                  createdAt: '2026-07-01 10:00:00',
-                  updatedAt: '2026-07-01 10:00:00',
-                  thread: 'T123',
-                  channel: 'C123',
+                  status: '🟡 Open',
+                  githubIssue: 'GitHub Issue #18',
+                  created: 'Today',
                 },
               ],
             };
@@ -186,6 +181,15 @@ describe('gemini-service', () => {
       assert.strictEqual(response.toolCalls.length, 1);
       assert.strictEqual(response.toolCalls[0].response.ok, true);
       assert.strictEqual(generateContentCalls[0].config.tools[0].functionDeclarations[0].name, 'search_commitments');
+      assert.match(
+        generateContentCalls[0].config.systemInstruction,
+        /MCP tool outputs are application records, not raw data to dump/,
+      );
+      assert.match(
+        generateContentCalls[0].config.systemInstruction,
+        /When a search returns no commitments, respond naturally/,
+      );
+      assert.match(generateContentCalls[0].config.systemInstruction, /duplicate titles, clearly distinguish each one/);
       assert.deepStrictEqual(generateContentCalls[1].contents.at(-1), {
         role: 'user',
         parts: [
@@ -195,15 +199,10 @@ describe('gemini-service', () => {
               response: {
                 output: [
                   {
-                    id: 12,
                     title: 'Authentication API',
-                    status: 'Open',
-                    assignee: 'U123',
-                    githubIssue: 18,
-                    createdAt: '2026-07-01 10:00:00',
-                    updatedAt: '2026-07-01 10:00:00',
-                    thread: 'T123',
-                    channel: 'C123',
+                    status: '🟡 Open',
+                    githubIssue: 'GitHub Issue #18',
+                    created: 'Today',
                   },
                 ],
               },
@@ -244,7 +243,7 @@ describe('gemini-service', () => {
             ok: false,
             error: {
               code: 'ValidationError',
-              message: 'Tool input validation failed.',
+              message: "I couldn't complete that request because some details were invalid.",
             },
           }),
         }),
@@ -256,7 +255,7 @@ describe('gemini-service', () => {
       assert.deepStrictEqual(generateContentCalls[1].contents.at(-1).parts[0].functionResponse.response, {
         error: {
           code: 'ValidationError',
-          message: 'Tool input validation failed.',
+          message: "I couldn't complete that request because some details were invalid.",
         },
       });
     });
@@ -297,7 +296,7 @@ describe('gemini-service', () => {
             ok: false,
             error: {
               code: 'ToolNotFound',
-              message: 'Tool not found: unknown_tool',
+              message: "I couldn't run that action because it is not available.",
             },
           }),
         }),

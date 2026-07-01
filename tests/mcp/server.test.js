@@ -44,6 +44,7 @@ describe('AnchorMcpServer', () => {
 
     assert.strictEqual(response.ok, false);
     assert.strictEqual(response.error.code, 'ToolNotFound');
+    assert.strictEqual(response.error.message, "I couldn't run that action because it is not available.");
   });
 
   it('returns ValidationError for invalid input', async () => {
@@ -69,6 +70,8 @@ describe('AnchorMcpServer', () => {
 
     assert.strictEqual(response.ok, false);
     assert.strictEqual(response.error.code, 'ValidationError');
+    assert.strictEqual(response.error.message, "I couldn't complete that request because some details were invalid.");
+    assert.strictEqual('details' in response.error, false);
   });
 
   it('returns ExecutionError when execution fails', async () => {
@@ -96,7 +99,7 @@ describe('AnchorMcpServer', () => {
 
     assert.strictEqual(response.ok, false);
     assert.strictEqual(response.error.code, 'ExecutionError');
-    assert.strictEqual(response.error.message, 'failure');
+    assert.strictEqual(response.error.message, "I couldn't complete that request right now. Please try again.");
   });
 
   it('lists tool discovery metadata', () => {

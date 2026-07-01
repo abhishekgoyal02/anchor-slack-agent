@@ -23,15 +23,10 @@ describe('search_commitments tool', () => {
     const tool = createSearchCommitmentsTool({
       commitmentSearchService: async () => [
         {
-          id: 12,
           title: 'Authentication API',
-          status: 'Open',
-          assignee: 'U123',
-          githubIssue: 18,
-          createdAt: '2026-07-01 00:00:00',
-          updatedAt: '2026-07-01 00:00:00',
-          thread: 'T123',
-          channel: 'C123',
+          status: '🟡 Open',
+          githubIssue: 'GitHub Issue #18',
+          created: 'Today',
         },
       ],
     });
@@ -39,15 +34,10 @@ describe('search_commitments tool', () => {
 
     assert.deepStrictEqual(results, [
       {
-        id: 12,
         title: 'Authentication API',
-        status: 'Open',
-        assignee: 'U123',
-        githubIssue: 18,
-        createdAt: '2026-07-01 00:00:00',
-        updatedAt: '2026-07-01 00:00:00',
-        thread: 'T123',
-        channel: 'C123',
+        status: '🟡 Open',
+        githubIssue: 'GitHub Issue #18',
+        created: 'Today',
       },
     ]);
   });
