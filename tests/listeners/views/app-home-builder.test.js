@@ -17,26 +17,17 @@ describe('buildAppHomeView', () => {
     assert.strictEqual(view.blocks[1].type, 'section');
   });
 
-  it('shows disconnected status with learn-more link by default', () => {
+  it('shows Gemini provider context', () => {
     const view = buildAppHomeView();
-    const mrkdwnTexts = view.blocks.filter((b) => b.type === 'section').map((b) => b.text.text);
-    const mcpText = mrkdwnTexts.find((t) => t.includes('MCP Server'));
-    assert.ok(mcpText);
-    assert.ok(mcpText.includes('disconnected'));
-    assert.ok(mcpText.includes('Learn how to enable'));
-  });
-
-  it('shows disconnected status when installUrl is provided', () => {
-    const view = buildAppHomeView('https://example.com/slack/install');
-    const mrkdwnTexts = view.blocks.filter((b) => b.type === 'section').map((b) => b.text.text);
-    const hasDisconnected = mrkdwnTexts.some((t) => t.includes('disconnected'));
-    assert.strictEqual(hasDisconnected, true);
-  });
-
-  it('shows connected status when isConnected is true', () => {
-    const view = buildAppHomeView(null, true);
-    const mrkdwnTexts = view.blocks.filter((b) => b.type === 'section').map((b) => b.text.text);
-    const hasConnected = mrkdwnTexts.some((t) => t.includes('connected'));
-    assert.strictEqual(hasConnected, true);
+    const mrkdwnTexts = view.blocks.flatMap((b) => {
+      if ('text' in b && b.text.type === 'mrkdwn') {
+        return b.text.text;
+      }
+      if ('elements' in b) {
+        return b.elements.filter((e) => e.type === 'mrkdwn').map((e) => e.text);
+      }
+      return [];
+    });
+    assert.ok(mrkdwnTexts.some((t) => t.includes('Gemini')));
   });
 });

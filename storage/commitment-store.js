@@ -201,6 +201,25 @@ export async function getOpenCommitmentsWithGithubIssues() {
 }
 
 /**
+ * Find commitments by text.
+ * @param {string} query
+ * @returns {Promise<Commitment[]>}
+ */
+export async function findCommitmentsByText(query) {
+  await initPromise;
+  const normalizedQuery = query.trim();
+
+  if (!normalizedQuery) {
+    return [];
+  }
+
+  const rows = await all('SELECT * FROM commitments WHERE text LIKE ? ORDER BY created_at ASC', [
+    `%${normalizedQuery}%`,
+  ]);
+  return /** @type {Commitment[]} */ (rows);
+}
+
+/**
  * Find an open commitment by thread and text.
  * @param {string} threadTs
  * @param {string} text

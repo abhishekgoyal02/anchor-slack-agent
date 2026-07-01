@@ -32,7 +32,7 @@ function shouldHandleMessage(event) {
 }
 
 /**
- * Handle messages sent to the agent via DM or in threads the bot is part of.
+ * Handle messages sent via DM or in threads the bot is part of.
  * @param {import('@slack/bolt').AllMiddlewareArgs & import('@slack/bolt').SlackEventMiddlewareArgs<'message'>} args
  * @returns {Promise<void>}
  */
@@ -53,8 +53,6 @@ export async function handleMessage({ event, logger, say, sayStream, setStatus }
 
     await setThinkingStatus(setStatus);
 
-    // TODO: Replace this stateless prompt with Gemini-backed conversation memory.
-    // For Phase 2, preserve channel/thread routing while disabling Claude session persistence.
     const responseText = await generateResponse(text);
 
     await streamAssistantResponse(sayStream, responseText);

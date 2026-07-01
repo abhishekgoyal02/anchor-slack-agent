@@ -1,5 +1,5 @@
 /**
- * Build the feedback buttons blocks for agent responses.
+ * Build the feedback buttons blocks for assistant responses.
  * @returns {import('@slack/types').KnownBlock[]}
  */
 export function buildFeedbackBlocks() {

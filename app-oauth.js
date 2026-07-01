@@ -46,7 +46,7 @@ const app = new App({
   ignoreSelf: false,
   clientId: process.env.SLACK_CLIENT_ID,
   clientSecret: process.env.SLACK_CLIENT_SECRET,
-  stateSecret: 'bolt-js-starter-agent',
+  stateSecret: 'anchor-oauth-state',
   scopes: botScopes,
   installationStore,
   installerOptions: {
@@ -60,9 +60,5 @@ registerListeners(app);
 (async () => {
   const port = Number.parseInt(process.env.PORT || '3000', 10);
   await app.start(port);
-  app.logger.info(`Starter Agent is running on port ${port}!`);
-  if (process.env.SLACK_REDIRECT_URI) {
-    const origin = new URL(process.env.SLACK_REDIRECT_URI).origin;
-    app.logger.info(`Connect the Slack MCP Server: ${origin}/slack/install`);
-  }
+  app.logger.info(`Anchor is running on port ${port}!`);
 })();

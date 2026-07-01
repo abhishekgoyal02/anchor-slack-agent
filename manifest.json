@@ -4,7 +4,7 @@
   },
   "features": {
     "assistant_view": {
-      "assistant_description": "Hi, I am an agent built using Bolt for JavaScript. I am here to help you out!",
+      "assistant_description": "Anchor helps track commitments, answer questions with Gemini, and sync GitHub issues.",
       "suggested_prompts": []
     },
     "app_home": {
@@ -20,26 +20,7 @@
   "oauth_config": {
     "redirect_urls": ["https://ngrok-free.app/slack/oauth_redirect"],
     "scopes": {
-      "user": [
-        "search:read",
-        "channels:history",
-        "channels:read",
-        "groups:history",
-        "groups:read",
-        "im:history",
-        "mpim:history",
-        "users:read",
-        "search:read.public",
-        "search:read.private",
-        "search:read.mpim",
-        "search:read.im",
-        "search:read.files",
-        "search:read.users",
-        "chat:write",
-        "canvases:read",
-        "canvases:write",
-        "users:read.email"
-      ],
+      "user": [],
       "bot": [
         "app_mentions:read",
         "channels:history",
@@ -71,7 +52,6 @@
       "is_enabled": true,
       "request_url": "https://ngrok-free.app/slack/events"
     },
-    "is_mcp_enabled": true,
     "org_deploy_enabled": true,
     "socket_mode_enabled": true,
     "token_rotation_enabled": false

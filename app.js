@@ -22,5 +22,5 @@ registerListeners(app);
     client: app.client,
     intervalMs: Number(process.env.SYNC_INTERVAL_MS || 300000),
   });
-  app.logger.info('Starter Agent is running!');
+  app.logger.info('Anchor is running!');
 })();

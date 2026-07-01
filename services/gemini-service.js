@@ -1,6 +1,10 @@
 import { GoogleGenAI } from '@google/genai';
 
+import { createAnchorMcpServer } from '../mcp/index.js';
+import { silentMcpLogger } from '../mcp/logger.js';
+
 const DEFAULT_MODEL = 'gemini-2.5-flash';
+const DEFAULT_MAX_TOOL_ITERATIONS = 5;
 
 /**
  * Error type used for Gemini service failures.
@@ -37,9 +41,35 @@ export class GeminiServiceError extends Error {
  */
 
 /**
+ * @typedef {GenerateTextOptions & {
+ *   mcpServer?: import('../mcp/server.js').AnchorMcpServer,
+ *   history?: Array<{ role: string, parts: Array<Record<string, unknown>> }>,
+ *   maxToolIterations?: number,
+ *   logger?: import('../mcp/logger.js').McpLogger,
+ * }} GenerateWithToolsOptions
+ */
+
+/**
+ * @typedef {{
+ *   name: string,
+ *   args: Record<string, unknown>,
+ *   response: import('../mcp/server.js').McpToolResponse,
+ *   durationMs: number,
+ * }} GeminiToolCallTrace
+ */
+
+/**
+ * @typedef {{
+ *   text: string,
+ *   history: Array<{ role: string, parts: Array<Record<string, unknown>> }>,
+ *   toolCalls: GeminiToolCallTrace[],
+ * }} GeminiToolCallingResult
+ */
+
+/**
  * Reusable Gemini text-generation service.
  *
- * This service intentionally has no Slack, GitHub, SQLite, or MCP coupling.
+ * This service intentionally has no Slack, GitHub, or SQLite coupling.
  * Higher-level application layers can pass prompts and generation options as
  * needed without changing this module.
  */
@@ -120,6 +150,144 @@ export class GeminiService {
   }
 
   /**
+   * Generates text with Gemini function calling backed by Anchor MCP tools.
+   *
+   * Gemini receives available tools from MCP discovery, decides whether to call
+   * a tool, and gets structured MCP results back before producing the final
+   * natural-language answer.
+   *
+   * @param {string} prompt - User prompt to send to Gemini.
+   * @param {GenerateWithToolsOptions} [options] - Tool-calling options.
+   * @returns {Promise<GeminiToolCallingResult>} Final response, updated history, and tool trace.
+   */
+  async generateTextWithTools(prompt, options = {}) {
+    if (typeof prompt !== 'string' || prompt.trim().length === 0) {
+      throw new GeminiServiceError('A non-empty prompt is required.');
+    }
+
+    const model = options.model?.trim() ?? this.#model;
+    const mcpServer = options.mcpServer ?? createAnchorMcpServer({ logger: options.logger });
+    const logger = options.logger ?? silentMcpLogger;
+    const maxToolIterations = normalizeMaxToolIterations(options.maxToolIterations);
+    const contents = [
+      ...(options.history ?? []),
+      {
+        role: 'user',
+        parts: [{ text: prompt }],
+      },
+    ];
+    const toolCalls = [];
+    const config = {
+      ...this.#buildGenerationConfig(options),
+      ...buildToolConfig(mcpServer.listTools()),
+    };
+
+    try {
+      for (let iteration = 0; iteration <= maxToolIterations; iteration += 1) {
+        const response = await this.#client.models.generateContent({
+          model,
+          contents,
+          ...(Object.keys(config).length > 0 ? { config } : {}),
+        });
+        const functionCalls = getFunctionCalls(response);
+
+        if (functionCalls.length === 0) {
+          const text = response.text?.trim();
+
+          if (!text) {
+            throw new GeminiServiceError('Gemini returned an empty response.');
+          }
+
+          contents.push({
+            role: 'model',
+            parts: [{ text }],
+          });
+          logger.info('Gemini final response generated', { toolCallCount: toolCalls.length });
+
+          return {
+            text,
+            history: contents,
+            toolCalls,
+          };
+        }
+
+        if (iteration === maxToolIterations) {
+          throw new GeminiServiceError('Gemini tool-calling iteration limit exceeded.');
+        }
+
+        contents.push({
+          role: 'model',
+          parts: functionCalls.map((functionCall) => ({ functionCall })),
+        });
+
+        const functionResponseParts = [];
+
+        for (const functionCall of functionCalls) {
+          const toolName = functionCall.name;
+          const args = normalizeFunctionArgs(functionCall.args);
+
+          if (!toolName) {
+            functionResponseParts.push({
+              functionResponse: {
+                name: 'unknown_tool',
+                response: {
+                  error: {
+                    code: 'ToolNotFound',
+                    message: 'Gemini requested a tool without a name.',
+                  },
+                },
+              },
+            });
+            continue;
+          }
+
+          logger.info('Gemini requested MCP tool', { toolName });
+          const startedAt = Date.now();
+          logger.info('MCP tool execution started', { toolName });
+          const toolResponse = await mcpServer.handleToolRequest({
+            toolName,
+            input: args,
+          });
+          const durationMs = Date.now() - startedAt;
+          logger.info('MCP tool execution finished', {
+            toolName,
+            durationMs,
+            ok: toolResponse.ok,
+          });
+
+          toolCalls.push({
+            name: toolName,
+            args,
+            response: toolResponse,
+            durationMs,
+          });
+          functionResponseParts.push({
+            functionResponse: {
+              name: toolName,
+              response: toolResponse.ok ? { output: toolResponse.result } : { error: toolResponse.error },
+            },
+          });
+        }
+
+        contents.push({
+          role: 'user',
+          parts: functionResponseParts,
+        });
+      }
+    } catch (error) {
+      if (error instanceof GeminiServiceError) {
+        throw error;
+      }
+
+      throw new GeminiServiceError('Failed to generate Gemini tool-calling response.', {
+        cause: error,
+      });
+    }
+
+    throw new GeminiServiceError('Gemini tool-calling loop ended unexpectedly.');
+  }
+
+  /**
    * Builds the Gemini generation config from supported request options.
    *
    * @param {GenerateTextOptions} options - Generation options.
@@ -153,6 +321,64 @@ export class GeminiService {
   }
 }
 
+/**
+ * @param {unknown} maxToolIterations
+ * @returns {number}
+ */
+function normalizeMaxToolIterations(maxToolIterations) {
+  if (typeof maxToolIterations === 'number' && Number.isInteger(maxToolIterations) && maxToolIterations >= 0) {
+    return maxToolIterations;
+  }
+
+  return DEFAULT_MAX_TOOL_ITERATIONS;
+}
+
+/**
+ * @param {Array<import('../mcp/server.js').McpToolDiscovery>} tools
+ * @returns {{ tools?: Array<{ functionDeclarations: Array<Record<string, unknown>> }> }}
+ */
+function buildToolConfig(tools) {
+  if (tools.length === 0) {
+    return {};
+  }
+
+  return {
+    tools: [
+      {
+        functionDeclarations: tools.map((tool) => ({
+          name: tool.name,
+          description: `${tool.description} Category: ${tool.category}. Version: ${tool.version}.`,
+          parametersJsonSchema: tool.inputSchema,
+        })),
+      },
+    ],
+  };
+}
+
+/**
+ * @param {unknown} response
+ * @returns {Array<{ name?: string, args?: unknown }>}
+ */
+function getFunctionCalls(response) {
+  if (Array.isArray(response?.functionCalls)) {
+    return response.functionCalls;
+  }
+
+  return [];
+}
+
+/**
+ * @param {unknown} args
+ * @returns {Record<string, unknown>}
+ */
+function normalizeFunctionArgs(args) {
+  if (args && typeof args === 'object' && !Array.isArray(args)) {
+    return /** @type {Record<string, unknown>} */ (args);
+  }
+
+  return {};
+}
+
 /** @type {GeminiService | null} */
 let defaultGeminiService = null;
 
@@ -173,7 +399,7 @@ export function getDefaultGeminiService() {
  * Generates plain text using the default Gemini service instance.
  *
  * This helper is intentionally small so Phase 1 can verify Gemini without
- * introducing Slack, GitHub, SQLite, or agent orchestration dependencies.
+ * introducing Slack, GitHub, or SQLite dependencies.
  *
  * @param {string} prompt - User prompt to send to Gemini.
  * @param {GenerateTextOptions} [options] - Optional generation settings.

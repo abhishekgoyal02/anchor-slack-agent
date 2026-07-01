@@ -4,7 +4,7 @@ import { sessionStore } from '../../thread-context/index.js';
 import { postCommitmentCard, setThinkingStatus, streamAssistantResponse } from './conversation-response.js';
 
 /**
- * Handle app_mention events and run the agent.
+ * Handle app_mention events and generate a Gemini response.
  * @param {import('@slack/bolt').AllMiddlewareArgs & import('@slack/bolt').SlackEventMiddlewareArgs<'app_mention'>} args
  * @returns {Promise<void>}
  */
@@ -30,8 +30,6 @@ export async function handleAppMentioned({ event, logger, say, sayStream, setSta
 
     await setThinkingStatus(setStatus);
 
-    // TODO: Replace this stateless prompt with Gemini-backed conversation memory.
-    // For Phase 2, preserve channel/thread routing while disabling Claude session persistence.
     const responseText = await generateResponse(cleanedText);
 
     await streamAssistantResponse(sayStream, responseText);

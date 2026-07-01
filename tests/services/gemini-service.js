@@ -139,6 +139,243 @@ describe('gemini-service', () => {
 
       await assert.rejects(service.generateText('Empty response'), /Gemini returned an empty response/);
     });
+
+    it('lets Gemini request an MCP tool and generates a final answer', async () => {
+      const generateContentCalls = [];
+      const mockClient = createSequentialGeminiClient(
+        [
+          { functionCalls: [{ name: 'search_commitments', args: { query: 'authentication' } }] },
+          { text: 'I found one authentication commitment.' },
+        ],
+        generateContentCalls,
+      );
+      const mcpCalls = [];
+      const service = new GeminiService({ client: mockClient, model: 'mock-model' });
+
+      const response = await service.generateTextWithTools('Find authentication commitments', {
+        mcpServer: createMockMcpServer({
+          handleToolRequest: async (request) => {
+            mcpCalls.push(request);
+            return {
+              ok: true,
+              result: [
+                {
+                  id: 12,
+                  title: 'Authentication API',
+                  status: 'Open',
+                  assignee: 'U123',
+                  githubIssue: 18,
+                  createdAt: '2026-07-01 10:00:00',
+                  updatedAt: '2026-07-01 10:00:00',
+                  thread: 'T123',
+                  channel: 'C123',
+                },
+              ],
+            };
+          },
+        }),
+      });
+
+      assert.strictEqual(response.text, 'I found one authentication commitment.');
+      assert.deepStrictEqual(mcpCalls, [
+        {
+          toolName: 'search_commitments',
+          input: { query: 'authentication' },
+        },
+      ]);
+      assert.strictEqual(response.toolCalls.length, 1);
+      assert.strictEqual(response.toolCalls[0].response.ok, true);
+      assert.strictEqual(generateContentCalls[0].config.tools[0].functionDeclarations[0].name, 'search_commitments');
+      assert.deepStrictEqual(generateContentCalls[1].contents.at(-1), {
+        role: 'user',
+        parts: [
+          {
+            functionResponse: {
+              name: 'search_commitments',
+              response: {
+                output: [
+                  {
+                    id: 12,
+                    title: 'Authentication API',
+                    status: 'Open',
+                    assignee: 'U123',
+                    githubIssue: 18,
+                    createdAt: '2026-07-01 10:00:00',
+                    updatedAt: '2026-07-01 10:00:00',
+                    thread: 'T123',
+                    channel: 'C123',
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      });
+    });
+
+    it('returns a normal final answer when Gemini does not request a tool', async () => {
+      const generateContentCalls = [];
+      const mockClient = createSequentialGeminiClient([{ text: 'No tool needed.' }], generateContentCalls);
+      const service = new GeminiService({ client: mockClient, model: 'mock-model' });
+
+      const response = await service.generateTextWithTools('Say hello', {
+        mcpServer: createMockMcpServer(),
+      });
+
+      assert.strictEqual(response.text, 'No tool needed.');
+      assert.deepStrictEqual(response.toolCalls, []);
+      assert.strictEqual(generateContentCalls.length, 1);
+    });
+
+    it('passes MCP validation failures back to Gemini for the final answer', async () => {
+      const generateContentCalls = [];
+      const mockClient = createSequentialGeminiClient(
+        [
+          { functionCalls: [{ name: 'search_commitments', args: { query: '' } }] },
+          { text: 'I could not search because the input was invalid.' },
+        ],
+        generateContentCalls,
+      );
+      const service = new GeminiService({ client: mockClient, model: 'mock-model' });
+
+      const response = await service.generateTextWithTools('Find commitments', {
+        mcpServer: createMockMcpServer({
+          handleToolRequest: async () => ({
+            ok: false,
+            error: {
+              code: 'ValidationError',
+              message: 'Tool input validation failed.',
+            },
+          }),
+        }),
+      });
+
+      assert.strictEqual(response.text, 'I could not search because the input was invalid.');
+      assert.strictEqual(response.toolCalls[0].response.ok, false);
+      assert.strictEqual(response.toolCalls[0].response.error.code, 'ValidationError');
+      assert.deepStrictEqual(generateContentCalls[1].contents.at(-1).parts[0].functionResponse.response, {
+        error: {
+          code: 'ValidationError',
+          message: 'Tool input validation failed.',
+        },
+      });
+    });
+
+    it('passes MCP execution failures back to Gemini for the final answer', async () => {
+      const mockClient = createSequentialGeminiClient([
+        { functionCalls: [{ name: 'search_commitments', args: { query: 'authentication' } }] },
+        { text: 'The search failed, so I cannot answer from commitments right now.' },
+      ]);
+      const service = new GeminiService({ client: mockClient, model: 'mock-model' });
+
+      const response = await service.generateTextWithTools('Find commitments', {
+        mcpServer: createMockMcpServer({
+          handleToolRequest: async () => ({
+            ok: false,
+            error: {
+              code: 'ExecutionError',
+              message: 'Storage unavailable.',
+            },
+          }),
+        }),
+      });
+
+      assert.strictEqual(response.text, 'The search failed, so I cannot answer from commitments right now.');
+      assert.strictEqual(response.toolCalls[0].response.error.code, 'ExecutionError');
+    });
+
+    it('handles Gemini requesting an unknown tool through MCP', async () => {
+      const mockClient = createSequentialGeminiClient([
+        { functionCalls: [{ name: 'unknown_tool', args: {} }] },
+        { text: 'That tool is not available.' },
+      ]);
+      const service = new GeminiService({ client: mockClient, model: 'mock-model' });
+
+      const response = await service.generateTextWithTools('Use a missing tool', {
+        mcpServer: createMockMcpServer({
+          handleToolRequest: async () => ({
+            ok: false,
+            error: {
+              code: 'ToolNotFound',
+              message: 'Tool not found: unknown_tool',
+            },
+          }),
+        }),
+      });
+
+      assert.strictEqual(response.text, 'That tool is not available.');
+      assert.strictEqual(response.toolCalls[0].name, 'unknown_tool');
+      assert.strictEqual(response.toolCalls[0].response.error.code, 'ToolNotFound');
+    });
+
+    it('supports multiple tool-calling iterations before the final answer', async () => {
+      const mockClient = createSequentialGeminiClient([
+        { functionCalls: [{ name: 'search_commitments', args: { query: 'authentication' } }] },
+        { functionCalls: [{ name: 'search_commitments', args: { query: 'api' } }] },
+        { text: 'I found matching authentication and API commitments.' },
+      ]);
+      const service = new GeminiService({ client: mockClient, model: 'mock-model' });
+
+      const response = await service.generateTextWithTools('Find related commitments', {
+        mcpServer: createMockMcpServer({
+          handleToolRequest: async () => ({
+            ok: true,
+            result: [],
+          }),
+        }),
+      });
+
+      assert.strictEqual(response.text, 'I found matching authentication and API commitments.');
+      assert.deepStrictEqual(
+        response.toolCalls.map((toolCall) => toolCall.args),
+        [{ query: 'authentication' }, { query: 'api' }],
+      );
+    });
+
+    it('preserves conversation history in tool-calling mode', async () => {
+      const generateContentCalls = [];
+      const mockClient = createSequentialGeminiClient([{ text: 'Continuing from history.' }], generateContentCalls);
+      const service = new GeminiService({ client: mockClient, model: 'mock-model' });
+      const history = [
+        {
+          role: 'user',
+          parts: [{ text: 'Earlier question' }],
+        },
+        {
+          role: 'model',
+          parts: [{ text: 'Earlier answer' }],
+        },
+      ];
+
+      const response = await service.generateTextWithTools('Follow up', {
+        history,
+        mcpServer: createMockMcpServer(),
+      });
+
+      assert.deepStrictEqual(generateContentCalls[0].contents.slice(0, 2), history);
+      assert.strictEqual(response.history[0], history[0]);
+      assert.strictEqual(response.history.at(-1).parts[0].text, 'Continuing from history.');
+    });
+
+    it('logs Gemini tool-calling lifecycle events', async () => {
+      const logs = [];
+      const logger = createCollectingLogger(logs);
+      const mockClient = createSequentialGeminiClient([
+        { functionCalls: [{ name: 'search_commitments', args: { query: 'authentication' } }] },
+        { text: 'Done.' },
+      ]);
+      const service = new GeminiService({ client: mockClient, model: 'mock-model' });
+
+      await service.generateTextWithTools('Find commitments', {
+        logger,
+        mcpServer: createMockMcpServer(),
+      });
+
+      assert.ok(logs.some((log) => log.message === 'Gemini requested MCP tool'));
+      assert.ok(logs.some((log) => log.message === 'MCP tool execution started'));
+      assert.ok(logs.some((log) => log.message === 'MCP tool execution finished'));
+      assert.ok(logs.some((log) => log.message === 'Gemini final response generated'));
+    });
   });
 
   describe('getDefaultGeminiService', () => {
@@ -191,4 +428,71 @@ function restoreEnv(name, value) {
   }
 
   process.env[name] = value;
+}
+
+/**
+ * @param {Array<{ text?: string, functionCalls?: Array<{ name?: string, args?: Record<string, unknown> }> }>} responses
+ * @param {Array<Record<string, unknown>>} [calls]
+ * @returns {any}
+ */
+function createSequentialGeminiClient(responses, calls = []) {
+  return /** @type {any} */ ({
+    models: {
+      generateContent: async (params) => {
+        calls.push(JSON.parse(JSON.stringify(params)));
+        const response = responses.shift();
+
+        if (!response) {
+          throw new Error('Unexpected Gemini call');
+        }
+
+        return response;
+      },
+    },
+  });
+}
+
+/**
+ * @param {{ handleToolRequest?: (request: { toolName: string, input: unknown }) => Promise<unknown> }} [overrides]
+ * @returns {any}
+ */
+function createMockMcpServer(overrides = {}) {
+  return {
+    listTools: () => [
+      {
+        name: 'search_commitments',
+        description: 'Search Anchor commitments.',
+        version: '1.0.0',
+        category: 'commitments',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            query: { type: 'string' },
+          },
+          required: ['query'],
+        },
+        exampleInput: { query: 'authentication' },
+        exampleOutput: [],
+      },
+    ],
+    handleToolRequest:
+      overrides.handleToolRequest ??
+      (async () => ({
+        ok: true,
+        result: [],
+      })),
+  };
+}
+
+/**
+ * @param {Array<{ level: string, message: string, context?: Record<string, unknown> }>} logs
+ * @returns {import('../../mcp/logger.js').McpLogger}
+ */
+function createCollectingLogger(logs) {
+  return {
+    debug: (message, context) => logs.push({ level: 'debug', message, context }),
+    info: (message, context) => logs.push({ level: 'info', message, context }),
+    warn: (message, context) => logs.push({ level: 'warn', message, context }),
+    error: (message, context) => logs.push({ level: 'error', message, context }),
+  };
 }
