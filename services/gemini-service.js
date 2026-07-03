@@ -447,7 +447,7 @@ function formatSearchCommitmentToolAnswer(toolCalls) {
     fields.push(`*Updated At:* ${formatSearchDate(commitment.updatedAt)}.`);
     appendOptionalSearchField(fields, 'GitHub Issue', formatSearchGithubIssue(commitment.githubIssue));
 
-    lines.push(` ${fields.join(' ')}`);
+    lines.push(`• ${fields.join(' ')}`);
 
     if (index < results.length - 1) {
       lines.push('');
@@ -588,7 +588,37 @@ function formatSearchGithubIssue(value) {
  * @returns {string}
  */
 function formatSearchStatus(value) {
-  return formatRequiredSearchField(value);
+  const formatted = formatRequiredSearchField(value);
+  if (!formatted) {
+    return '⚫ Unknown';
+  }
+
+  const normalizedStatus = formatted.toLowerCase();
+  if (normalizedStatus === 'open') {
+    return '🟡 Open';
+  }
+
+  if (normalizedStatus === 'completed') {
+    return '✅ Completed';
+  }
+
+  if (normalizedStatus === 'in progress') {
+    return '🔵 In Progress';
+  }
+
+  if (normalizedStatus === 'blocked') {
+    return '🔴 Blocked';
+  }
+
+  if (normalizedStatus === 'archived') {
+    return '⚪ Archived';
+  }
+
+  if (normalizedStatus === 'unknown') {
+    return '⚫ Unknown';
+  }
+
+  return `⚫ ${formatted}`;
 }
 
 /** @type {GeminiService | null} */

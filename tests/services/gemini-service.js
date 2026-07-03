@@ -178,7 +178,7 @@ describe('gemini-service', () => {
         [
           'I found 1 commitments related to authentication:',
           '',
-          " *Title:* I'll complete the login API by Friday. *Status:* Completed. *Assignee:* <@U0ABCDE123>. *Created At:* 2026-07-01. *Updated At:* 2026-07-01. *GitHub Issue:* #12.",
+          "• *Title:* I'll complete the login API by Friday. *Status:* ✅ Completed. *Assignee:* <@U0ABCDE123>. *Created At:* 2026-07-01. *Updated At:* 2026-07-01. *GitHub Issue:* #12.",
         ].join('\n'),
       );
       assert.deepStrictEqual(mcpCalls, [
@@ -274,7 +274,7 @@ describe('gemini-service', () => {
         [
           'I found 1 commitments related to login:',
           '',
-          " *Title:* I'll finish the login API by Friday. *Status:* Open. *Created At:* 2026-07-01. *Updated At:* 2026-07-01. *GitHub Issue:* #13.",
+          "• *Title:* I'll finish the login API by Friday. *Status:* 🟡 Open. *Created At:* 2026-07-01. *Updated At:* 2026-07-01. *GitHub Issue:* #13.",
         ].join('\n'),
       );
       assert.doesNotMatch(response.text, /Assignee:/);
@@ -318,9 +318,9 @@ describe('gemini-service', () => {
         [
           'I found 2 commitments related to login:',
           '',
-          " *Title:* I'll complete the login API by Friday. *Status:* Completed. *Assignee:* <@U0ABCDE123>. *Created At:* 2026-07-01. *Updated At:* 2026-07-01. *GitHub Issue:* #12.",
+          "• *Title:* I'll complete the login API by Friday. *Status:* ✅ Completed. *Assignee:* <@U0ABCDE123>. *Created At:* 2026-07-01. *Updated At:* 2026-07-01. *GitHub Issue:* #12.",
           '',
-          " *Title:* I'll finish the login API by Friday. *Status:* Open. *Assignee:* <@U0ABCDE123>. *Created At:* 2026-07-01. *Updated At:* 2026-07-01. *GitHub Issue:* #13.",
+          "• *Title:* I'll finish the login API by Friday. *Status:* 🟡 Open. *Assignee:* <@U0ABCDE123>. *Created At:* 2026-07-01. *Updated At:* 2026-07-01. *GitHub Issue:* #13.",
         ].join('\n'),
       );
     });
@@ -359,7 +359,7 @@ describe('gemini-service', () => {
           [
             'I found 1 commitments related to API:',
             '',
-            " *Title:* I'll complete the API by Friday. *Status:* In Progress. *Assignee:* <@U0ABCDE123>. *Created At:* 2026-07-01. *Updated At:* 2026-07-01. *GitHub Issue:* #14.",
+            "• *Title:* I'll complete the API by Friday. *Status:* 🔵 In Progress. *Assignee:* <@U0ABCDE123>. *Created At:* 2026-07-01. *Updated At:* 2026-07-01. *GitHub Issue:* #14.",
           ].join('\n'),
         );
       } finally {
