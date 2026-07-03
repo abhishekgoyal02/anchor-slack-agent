@@ -15,11 +15,14 @@ const db = new sqlite3.Database(DB_PATH);
  *   channel_id: string,
  *   thread_ts: string,
  *   message_ts: string | null,
- *   status: 'open' | 'completed',
+ *   status: string,
  *   created_at: string,
  *   github_issue_number: number | null,
  *   github_issue_url: string | null,
  *   completed_at: string | null,
+ *   assignee_name?: string | null,
+ *   due_date?: string | null,
+ *   summary?: string | null,
  * }} Commitment
  */
 

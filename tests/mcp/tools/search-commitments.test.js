@@ -24,9 +24,11 @@ describe('search_commitments tool', () => {
       commitmentSearchService: async () => [
         {
           title: 'Authentication API',
-          status: '🟡 Open',
-          githubIssue: 'GitHub Issue #18',
-          created: 'Today',
+          status: 'Open',
+          githubIssue: '18',
+          createdAt: '2026-07-01 07:12:35',
+          updatedAt: '2026-07-01 07:12:35',
+          assignee: '<@U123>',
         },
       ],
     });
@@ -35,11 +37,32 @@ describe('search_commitments tool', () => {
     assert.deepStrictEqual(results, [
       {
         title: 'Authentication API',
-        status: '🟡 Open',
-        githubIssue: 'GitHub Issue #18',
-        created: 'Today',
+        status: 'Open',
+        githubIssue: '18',
+        createdAt: '2026-07-01 07:12:35',
+        updatedAt: '2026-07-01 07:12:35',
+        assignee: '<@U123>',
       },
     ]);
+  });
+
+  it('sorts results by status priority and newest-first within status', async () => {
+    const tool = createSearchCommitmentsTool({
+      commitmentSearchService: async () => [
+        { title: 'Archived work', status: 'Archived', githubIssue: 'Not linked', createdAt: '2026-07-01 00:00:00' },
+        { title: 'Completed older', status: 'Completed', githubIssue: '11', createdAt: '2026-06-28 00:00:00' },
+        { title: 'Open older', status: 'Open', githubIssue: '13', createdAt: '2026-06-30 00:00:00' },
+        { title: 'In progress', status: 'In Progress', githubIssue: '12', createdAt: '2026-07-01 00:00:00' },
+        { title: 'Open newest', status: 'Open', githubIssue: 'Not linked', createdAt: '2026-07-01 00:00:00' },
+      ],
+    });
+
+    const results = await tool.execute({ query: 'api' });
+
+    assert.deepStrictEqual(
+      results.map((item) => item.title),
+      ['Open newest', 'Open older', 'In progress', 'Completed older', 'Archived work'],
+    );
   });
 
   it('returns empty results', async () => {

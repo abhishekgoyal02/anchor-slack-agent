@@ -160,10 +160,12 @@ describe('gemini-service', () => {
               ok: true,
               result: [
                 {
-                  title: 'Authentication API',
-                  status: '🟡 Open',
-                  githubIssue: 'GitHub Issue #18',
-                  created: 'Today',
+                  title: "I'll complete the login API by Friday",
+                  status: 'Completed',
+                  assignee: 'U0ABCDE123',
+                  createdAt: '2026-07-01 07:12:35',
+                  updatedAt: '2026-07-01 07:13:45',
+                  githubIssue: '12',
                 },
               ],
             };
@@ -171,7 +173,14 @@ describe('gemini-service', () => {
         }),
       });
 
-      assert.strictEqual(response.text, 'I found one authentication commitment.');
+      assert.strictEqual(
+        response.text,
+        [
+          'I found 1 commitments related to authentication:',
+          '',
+          " *Title:* I'll complete the login API by Friday. *Status:* Completed. *Assignee:* <@U0ABCDE123>. *Created At:* 2026-07-01. *Updated At:* 2026-07-01. *GitHub Issue:* #12.",
+        ].join('\n'),
+      );
       assert.deepStrictEqual(mcpCalls, [
         {
           toolName: 'search_commitments',
@@ -181,15 +190,23 @@ describe('gemini-service', () => {
       assert.strictEqual(response.toolCalls.length, 1);
       assert.strictEqual(response.toolCalls[0].response.ok, true);
       assert.strictEqual(generateContentCalls[0].config.tools[0].functionDeclarations[0].name, 'search_commitments');
+      assert.match(generateContentCalls[0].config.systemInstruction, /Do not use bullets, numbering, emojis, JSON/);
       assert.match(
         generateContentCalls[0].config.systemInstruction,
-        /MCP tool outputs are application records, not raw data to dump/,
+        /Render each commitment as exactly one paragraph with every field on the same line/,
       );
       assert.match(
         generateContentCalls[0].config.systemInstruction,
-        /When a search returns no commitments, respond naturally/,
+        /Title:, Status:, Assignee:, Created At:, Updated At:, GitHub Issue:/,
       );
-      assert.match(generateContentCalls[0].config.systemInstruction, /duplicate titles, clearly distinguish each one/);
+      assert.match(generateContentCalls[0].config.systemInstruction, /Use each provided status exactly/);
+      assert.match(
+        generateContentCalls[0].config.systemInstruction,
+        /If assignee is missing, omit the Assignee field entirely/,
+      );
+      assert.match(generateContentCalls[0].config.systemInstruction, /format it as a mention: <@U123ABC45>/);
+      assert.match(generateContentCalls[0].config.systemInstruction, /GitHub Issue: #12/);
+      assert.match(generateContentCalls[0].config.systemInstruction, /I couldn't find any commitments related to/);
       assert.deepStrictEqual(generateContentCalls[1].contents.at(-1), {
         role: 'user',
         parts: [
@@ -199,10 +216,12 @@ describe('gemini-service', () => {
               response: {
                 output: [
                   {
-                    title: 'Authentication API',
-                    status: '🟡 Open',
-                    githubIssue: 'GitHub Issue #18',
-                    created: 'Today',
+                    title: "I'll complete the login API by Friday",
+                    status: 'Completed',
+                    assignee: 'U0ABCDE123',
+                    createdAt: '2026-07-01 07:12:35',
+                    updatedAt: '2026-07-01 07:13:45',
+                    githubIssue: '12',
                   },
                 ],
               },
@@ -224,6 +243,128 @@ describe('gemini-service', () => {
       assert.strictEqual(response.text, 'No tool needed.');
       assert.deepStrictEqual(response.toolCalls, []);
       assert.strictEqual(generateContentCalls.length, 1);
+    });
+
+    it('omits the assignee line when the tool result has no assignee', async () => {
+      const mockClient = createSequentialGeminiClient([
+        { functionCalls: [{ name: 'search_commitments', args: { query: 'login' } }] },
+        { text: 'ignored because formatting is deterministic' },
+      ]);
+      const service = new GeminiService({ client: mockClient, model: 'mock-model' });
+
+      const response = await service.generateTextWithTools('Find login commitments', {
+        mcpServer: createMockMcpServer({
+          handleToolRequest: async () => ({
+            ok: true,
+            result: [
+              {
+                title: "I'll finish the login API by Friday",
+                status: 'Open',
+                createdAt: '2026-07-01 07:17:59',
+                updatedAt: '2026-07-01 07:17:59',
+                githubIssue: '13',
+              },
+            ],
+          }),
+        }),
+      });
+
+      assert.strictEqual(
+        response.text,
+        [
+          'I found 1 commitments related to login:',
+          '',
+          " *Title:* I'll finish the login API by Friday. *Status:* Open. *Created At:* 2026-07-01. *Updated At:* 2026-07-01. *GitHub Issue:* #13.",
+        ].join('\n'),
+      );
+      assert.doesNotMatch(response.text, /Assignee:/);
+    });
+
+    it('formats search results when Gemini returns empty final text after a successful tool call', async () => {
+      const mockClient = createSequentialGeminiClient([
+        { functionCalls: [{ name: 'search_commitments', args: { query: 'login' } }] },
+        { text: '   ' },
+      ]);
+      const service = new GeminiService({ client: mockClient, model: 'mock-model' });
+
+      const response = await service.generateTextWithTools('Search commitments related to login', {
+        mcpServer: createMockMcpServer({
+          handleToolRequest: async () => ({
+            ok: true,
+            result: [
+              {
+                title: "I'll complete the login API by Friday.",
+                status: 'Completed',
+                assignee: 'U0ABCDE123',
+                createdAt: '2026-07-01 07:12:35',
+                updatedAt: '2026-07-01 07:12:35',
+                githubIssue: '12',
+              },
+              {
+                title: "I'll finish the login API by Friday",
+                status: 'Open',
+                assignee: '<@U0ABCDE123>',
+                createdAt: '2026-07-01 07:13:45',
+                updatedAt: '2026-07-01 07:13:45',
+                githubIssue: 'GitHub Issue #13',
+              },
+            ],
+          }),
+        }),
+      });
+
+      assert.strictEqual(
+        response.text,
+        [
+          'I found 2 commitments related to login:',
+          '',
+          " *Title:* I'll complete the login API by Friday. *Status:* Completed. *Assignee:* <@U0ABCDE123>. *Created At:* 2026-07-01. *Updated At:* 2026-07-01. *GitHub Issue:* #12.",
+          '',
+          " *Title:* I'll finish the login API by Friday. *Status:* Open. *Assignee:* <@U0ABCDE123>. *Created At:* 2026-07-01. *Updated At:* 2026-07-01. *GitHub Issue:* #13.",
+        ].join('\n'),
+      );
+    });
+
+    it('formats search results on runtimes without Array.prototype.findLast', async () => {
+      const originalFindLast = Array.prototype.findLast;
+      Array.prototype.findLast = undefined;
+
+      try {
+        const mockClient = createSequentialGeminiClient([
+          { functionCalls: [{ name: 'search_commitments', args: { query: 'API' } }] },
+          { text: 'ignored because formatting is deterministic' },
+        ]);
+        const service = new GeminiService({ client: mockClient, model: 'mock-model' });
+
+        const response = await service.generateTextWithTools('Search commitments related to API', {
+          mcpServer: createMockMcpServer({
+            handleToolRequest: async () => ({
+              ok: true,
+              result: [
+                {
+                  title: "I'll complete the API by Friday",
+                  status: 'In Progress',
+                  assignee: 'U0ABCDE123',
+                  createdAt: '2026-07-01 07:12:35',
+                  updatedAt: '2026-07-01 07:13:45',
+                  githubIssue: '14',
+                },
+              ],
+            }),
+          }),
+        });
+
+        assert.strictEqual(
+          response.text,
+          [
+            'I found 1 commitments related to API:',
+            '',
+            " *Title:* I'll complete the API by Friday. *Status:* In Progress. *Assignee:* <@U0ABCDE123>. *Created At:* 2026-07-01. *Updated At:* 2026-07-01. *GitHub Issue:* #14.",
+          ].join('\n'),
+        );
+      } finally {
+        Array.prototype.findLast = originalFindLast;
+      }
     });
 
     it('passes MCP validation failures back to Gemini for the final answer', async () => {

@@ -2,45 +2,41 @@
  * @typedef {{
  *   title: string,
  *   status: string,
- *   githubIssue: string,
- *   created: string,
- *   dueDate?: string,
- *   summary?: string,
- *   assigneeName?: string,
+ *   githubIssue?: string,
+ *   createdAt: string,
+ *   updatedAt: string,
+ *   assignee?: string,
  * }} CommitmentDto
  */
 
 const STATUS_LABELS = {
-  open: '🟡 Open',
-  completed: '✅ Completed',
-  in_progress: '🔵 In Progress',
-  archived: '⚪ Archived',
+  open: 'Open',
+  completed: 'Completed',
+  in_progress: 'In Progress',
+  archived: 'Archived',
 };
 
 /**
  * Map a storage commitment row into the public MCP DTO.
  * @param {import('../storage/commitment-store.js').Commitment} commitment
- * @param {{ now?: Date }} [options]
  * @returns {CommitmentDto}
  */
-export function toCommitmentDto(commitment, options = {}) {
+export function toCommitmentDto(commitment) {
   const dto = {
     title: commitment.text,
     status: formatCommitmentStatus(commitment.status),
-    githubIssue: formatGithubIssue(commitment.github_issue_number),
-    created: formatHumanDate(commitment.created_at, options.now),
+    createdAt: formatTimestamp(commitment.created_at),
+    updatedAt: formatTimestamp(commitment.completed_at || commitment.created_at),
   };
 
-  if (typeof commitment.summary === 'string' && commitment.summary.trim()) {
-    dto.summary = commitment.summary.trim();
+  const assignee = formatSlackMention(commitment.assignee_name || commitment.user_id);
+  if (assignee) {
+    dto.assignee = assignee;
   }
 
-  if (typeof commitment.due_date === 'string' && commitment.due_date.trim()) {
-    dto.dueDate = formatHumanDate(commitment.due_date, options.now);
-  }
-
-  if (typeof commitment.assignee_name === 'string' && commitment.assignee_name.trim()) {
-    dto.assigneeName = commitment.assignee_name.trim();
+  const githubIssue = formatGithubIssue(commitment.github_issue_number);
+  if (githubIssue) {
+    dto.githubIssue = githubIssue;
   }
 
   return dto;
@@ -70,14 +66,14 @@ export function formatCommitmentStatus(status) {
 
 /**
  * @param {number | null | undefined} issueNumber
- * @returns {string}
+ * @returns {string | null}
  */
 export function formatGithubIssue(issueNumber) {
   if (typeof issueNumber === 'number' && Number.isInteger(issueNumber) && issueNumber > 0) {
-    return `GitHub Issue #${issueNumber}`;
+    return String(issueNumber);
   }
 
-  return 'No GitHub issue linked';
+  return null;
 }
 
 /**
@@ -135,4 +131,38 @@ function parseCommitmentDate(value) {
   }
 
   return date;
+}
+
+/**
+ * @param {string | null | undefined} value
+ * @returns {string}
+ */
+export function formatTimestamp(value) {
+  if (typeof value !== 'string' || !value.trim()) {
+    return '';
+  }
+
+  return value.trim();
+}
+
+/**
+ * @param {string | null | undefined} value
+ * @returns {string | null}
+ */
+export function formatSlackMention(value) {
+  if (typeof value !== 'string' || !value.trim()) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  const mentionMatch = trimmed.match(/^<@([UW][A-Z0-9]+)>$/i);
+  if (mentionMatch) {
+    return `<@${mentionMatch[1]}>`;
+  }
+
+  if (/^[UW][A-Z0-9]{2,}$/i.test(trimmed)) {
+    return `<@${trimmed}>`;
+  }
+
+  return trimmed;
 }

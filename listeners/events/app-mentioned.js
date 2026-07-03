@@ -28,19 +28,50 @@ export async function handleAppMentioned({ event, logger, say, sayStream, setSta
       return;
     }
 
-    await setThinkingStatus(setStatus);
+    await setThinkingStatus(setStatus, logger);
 
     const responseText = await generateResponse(cleanedText);
 
     await streamAssistantResponse(sayStream, responseText);
 
-    // TODO: Store Gemini conversation memory here when Phase 3 introduces it.
     sessionStore.setSession(channelId, threadTs, threadTs);
   } catch (e) {
-    logger.error(`Failed to handle app mention: ${e}`);
+    logListenerError(logger, 'Failed to handle app mention', e);
     await say({
       text: ':warning: Something went wrong while processing your message. Please try again.',
       thread_ts: event.thread_ts || event.ts,
     });
   }
+}
+
+/**
+ * @param {import('../../mcp/logger.js').McpLogger} logger
+ * @param {string} message
+ * @param {unknown} error
+ * @returns {void}
+ */
+function logListenerError(logger, message, error) {
+  logger.error(message, serializeError(error));
+}
+
+/**
+ * @param {unknown} error
+ * @returns {Record<string, unknown>}
+ */
+function serializeError(error) {
+  if (!(error instanceof Error)) {
+    return { error };
+  }
+
+  const context = {
+    name: error.name,
+    message: error.message,
+    stack: error.stack,
+  };
+
+  if (error.cause !== undefined) {
+    context.cause = serializeError(error.cause);
+  }
+
+  return context;
 }

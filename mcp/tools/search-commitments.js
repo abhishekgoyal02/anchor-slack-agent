@@ -12,11 +12,12 @@ export const metadata = {
   },
   exampleOutput: [
     {
-      title: 'Authentication API',
-      status: '🟡 Open',
-      githubIssue: 'GitHub Issue #18',
-      created: 'Today',
-      assigneeName: 'Abhishek Goyal',
+      title: "I'll complete the login API by Friday",
+      status: 'Open',
+      githubIssue: '18',
+      createdAt: '2026-07-01 07:12:35',
+      updatedAt: '2026-07-01 07:12:35',
+      assignee: '<@U123ABC45>',
     },
   ],
 };
@@ -36,6 +37,49 @@ export function createSearchCommitmentsTool(deps = {}) {
   return {
     metadata,
     inputSchema,
-    execute: async (input) => commitmentSearchService(input),
+    execute: async (input) => {
+      const results = await commitmentSearchService(input);
+      return [...results].sort(compareCommitmentsForUx);
+    },
   };
+}
+
+const STATUS_PRIORITY = {
+  Open: 0,
+  'In Progress': 1,
+  Completed: 2,
+  Archived: 3,
+};
+
+/**
+ * @param {{ status?: string, createdAt?: string }} left
+ * @param {{ status?: string, createdAt?: string }} right
+ * @returns {number}
+ */
+function compareCommitmentsForUx(left, right) {
+  const leftPriority = STATUS_PRIORITY[left.status ?? ''] ?? Number.MAX_SAFE_INTEGER;
+  const rightPriority = STATUS_PRIORITY[right.status ?? ''] ?? Number.MAX_SAFE_INTEGER;
+
+  if (leftPriority !== rightPriority) {
+    return leftPriority - rightPriority;
+  }
+
+  return parseCreatedTimestamp(right.createdAt) - parseCreatedTimestamp(left.createdAt);
+}
+
+/**
+ * @param {string | undefined} createdAt
+ * @returns {number}
+ */
+function parseCreatedTimestamp(createdAt) {
+  if (!createdAt) {
+    return 0;
+  }
+
+  const parsed = new Date(createdAt.replace(' ', 'T'));
+  if (Number.isNaN(parsed.getTime())) {
+    return 0;
+  }
+
+  return parsed.getTime();
 }

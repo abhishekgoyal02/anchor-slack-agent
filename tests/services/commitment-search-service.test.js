@@ -35,9 +35,43 @@ describe('commitment-search-service', () => {
     assert.deepStrictEqual(calls, ['authentication']);
     assert.strictEqual(results.length, 1);
     assert.strictEqual(results[0].title, 'Authentication API');
-    assert.strictEqual(results[0].status, '🟡 Open');
-    assert.strictEqual(results[0].githubIssue, 'GitHub Issue #18');
-    assert.strictEqual(typeof results[0].created, 'string');
+    assert.strictEqual(results[0].status, 'Open');
+    assert.strictEqual(results[0].githubIssue, '18');
+    assert.strictEqual(results[0].createdAt, '2026-07-01 00:00:00');
+    assert.strictEqual(results[0].updatedAt, '2026-07-01 00:00:00');
+    assert.strictEqual(results[0].assignee, '<@U123>');
+  });
+
+  it('omits assignee and GitHub issue when they do not exist', async () => {
+    const results = await searchCommitments(
+      { query: 'missing owner' },
+      {
+        store: {
+          findCommitmentsByText: async () => [
+            {
+              id: 99,
+              text: 'Review authentication',
+              user_id: '',
+              channel_id: 'C123',
+              thread_ts: 'T123',
+              message_ts: 'M123',
+              status: 'open',
+              created_at: '2026-07-01 00:00:00',
+              github_issue_number: null,
+              github_issue_url: null,
+              completed_at: null,
+            },
+          ],
+        },
+      },
+    );
+
+    assert.deepStrictEqual(results[0], {
+      title: 'Review authentication',
+      status: 'Open',
+      createdAt: '2026-07-01 00:00:00',
+      updatedAt: '2026-07-01 00:00:00',
+    });
   });
 
   it('returns empty results without querying storage for blank input', async () => {

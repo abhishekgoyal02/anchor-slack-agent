@@ -156,7 +156,6 @@ export async function handleCommitmentConfirm({ ack, body, client, logger }) {
           : buildCommitmentConfirmedCard(text, { githubError: true }),
     };
 
-    logger.debug(`chat.update payload (Confirm): ${JSON.stringify(updatePayload)}`);
     await client.chat.update(updatePayload);
     logger.debug(`Commitment saved for user ${userId} in channel ${channelId}`);
   } catch (e) {
@@ -192,7 +191,6 @@ export async function handleCommitmentIgnore({ ack, body, client, logger }) {
       blocks: buildCommitmentIgnoredCard(text),
     };
 
-    logger.debug(`chat.update payload (Ignore): ${JSON.stringify(updatePayload)}`);
     await client.chat.update(updatePayload);
     logger.debug(`Commitment ignored for message timestamp: ${messageTs}`);
   } catch (e) {

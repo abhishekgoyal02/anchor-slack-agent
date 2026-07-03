@@ -6,13 +6,19 @@ import { silentMcpLogger } from '../mcp/logger.js';
 const DEFAULT_MODEL = 'gemini-2.5-flash';
 const DEFAULT_MAX_TOOL_ITERATIONS = 5;
 const DEFAULT_TOOL_CALLING_SYSTEM_INSTRUCTION = [
-  'You are Anchor, a professional assistant responding for Slack users.',
-  'MCP tool outputs are application records, not raw data to dump.',
-  'Summarize results naturally and concisely instead of repeating every field.',
-  'Never mention or expose internal IDs, database terms, SQL, channels, threads, or implementation details.',
-  'When records include duplicate titles, clearly distinguish each one using user-facing fields such as status, GitHub issue, and created date.',
-  "When a search returns no commitments, respond naturally (for example: I couldn't find any commitments related to the query).",
-  'If a tool error appears, provide a brief, user-friendly explanation without technical internals.',
+  'Format search_commitments answers as plain text only.',
+  'Use this exact top layout: I found <count> commitments related to <query>:',
+  'Do not use bullets, numbering, emojis, JSON, summaries, or section headings.',
+  'Render each commitment as exactly one paragraph with every field on the same line.',
+  'Keep this exact field order and labels: Title:, Status:, Assignee:, Created At:, Updated At:, GitHub Issue:',
+  'Never put fields on separate lines and never use commas between fields.',
+  'Use each provided status exactly as returned by the tool.',
+  'Format Created At and Updated At as YYYY-MM-DD only.',
+  'If assignee is missing, omit the Assignee field entirely.',
+  'If assignee is a Slack user ID like U123ABC45, format it as a mention: <@U123ABC45>.',
+  'For GitHub issue, show only # followed by the issue number after the label, for example: GitHub Issue: #12.',
+  'Never output internal fields such as channel, thread, or database IDs.',
+  "If there are no results, reply naturally: I couldn't find any commitments related to '<query>'.",
 ].join(' ');
 
 /**
@@ -205,19 +211,21 @@ export class GeminiService {
 
         if (functionCalls.length === 0) {
           const text = response.text?.trim();
+          const toolFormattedText = formatSearchCommitmentToolAnswer(toolCalls);
+          const finalText = toolFormattedText ?? text;
 
-          if (!text) {
+          if (!finalText) {
             throw new GeminiServiceError('Gemini returned an empty response.');
           }
 
           contents.push({
             role: 'model',
-            parts: [{ text }],
+            parts: [{ text: finalText }],
           });
           logger.info('Gemini final response generated', { toolCallCount: toolCalls.length });
 
           return {
-            text,
+            text: finalText,
             history: contents,
             toolCalls,
           };
@@ -291,7 +299,8 @@ export class GeminiService {
         throw error;
       }
 
-      throw new GeminiServiceError('Failed to generate Gemini tool-calling response.', {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new GeminiServiceError(`Failed to generate Gemini tool-calling response: ${detail}`, {
         cause: error,
       });
     }
@@ -401,6 +410,185 @@ function buildToolCallingSystemInstruction(overrideInstruction) {
   }
 
   return DEFAULT_TOOL_CALLING_SYSTEM_INSTRUCTION;
+}
+
+/**
+ * @param {GeminiToolCallTrace[]} toolCalls
+ * @returns {string | null}
+ */
+function formatSearchCommitmentToolAnswer(toolCalls) {
+  const searchCall = findLastSearchCommitmentToolCall(toolCalls);
+  if (!searchCall?.response.ok || !Array.isArray(searchCall.response.result)) {
+    return null;
+  }
+
+  const query = typeof searchCall.args.query === 'string' ? searchCall.args.query : '';
+  const results = searchCall.response.result;
+
+  if (results.length === 0) {
+    if (toolCalls.length > 1) {
+      return null;
+    }
+
+    return `I couldn't find any commitments related to '${query}'.`;
+  }
+
+  const lines = [`I found ${results.length} commitments related to ${query}:`, ''];
+
+  results.forEach((result, index) => {
+    const commitment = normalizeSearchResult(result);
+    const fields = [
+      `*Title:* ${formatSentenceSearchField(commitment.title)}`,
+      `*Status:* ${formatSearchStatus(commitment.status)}.`,
+    ];
+
+    appendOptionalSearchField(fields, 'Assignee', formatSearchAssignee(commitment.assignee));
+    fields.push(`*Created At:* ${formatSearchDate(commitment.createdAt)}.`);
+    fields.push(`*Updated At:* ${formatSearchDate(commitment.updatedAt)}.`);
+    appendOptionalSearchField(fields, 'GitHub Issue', formatSearchGithubIssue(commitment.githubIssue));
+
+    lines.push(` ${fields.join(' ')}`);
+
+    if (index < results.length - 1) {
+      lines.push('');
+    }
+  });
+
+  return lines.join('\n');
+}
+
+/**
+ * @param {GeminiToolCallTrace[]} toolCalls
+ * @returns {GeminiToolCallTrace | undefined}
+ */
+function findLastSearchCommitmentToolCall(toolCalls) {
+  for (let index = toolCalls.length - 1; index >= 0; index -= 1) {
+    if (toolCalls[index]?.name === 'search_commitments') {
+      return toolCalls[index];
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * @param {string[]} fields
+ * @param {string} label
+ * @param {string} formatted
+ * @returns {void}
+ */
+function appendOptionalSearchField(fields, label, formatted) {
+  if (!formatted) {
+    return;
+  }
+
+  fields.push(`*${label}:* ${formatted}.`);
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function formatRequiredSearchField(value) {
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    return '';
+  }
+
+  const formatted = String(value).trim();
+  return formatted;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {Record<string, unknown>}
+ */
+function normalizeSearchResult(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return /** @type {Record<string, unknown>} */ (value);
+  }
+
+  return {};
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function formatSentenceSearchField(value) {
+  const formatted = formatRequiredSearchField(value);
+  if (!formatted) {
+    return '.';
+  }
+
+  return /[.!?]$/.test(formatted) ? formatted : `${formatted}.`;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function formatOptionalSearchField(value) {
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    return '';
+  }
+
+  const formatted = String(value).trim();
+  if (/^(none|null|undefined)$/i.test(formatted)) {
+    return '';
+  }
+
+  return formatted;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function formatSearchDate(value) {
+  return formatRequiredSearchField(value).match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? '';
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function formatSearchAssignee(value) {
+  const formatted = formatOptionalSearchField(value);
+  if (!formatted) {
+    return '';
+  }
+
+  if (/^<@[^>]+>$/.test(formatted)) {
+    return formatted;
+  }
+
+  if (/^U[A-Z0-9]+$/.test(formatted)) {
+    return `<@${formatted}>`;
+  }
+
+  return formatted;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function formatSearchGithubIssue(value) {
+  const formatted = formatOptionalSearchField(value);
+  if (!formatted) {
+    return '';
+  }
+
+  const issueNumber = formatted.match(/\d+/)?.[0];
+  return issueNumber ? `#${issueNumber}` : formatted;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function formatSearchStatus(value) {
+  return formatRequiredSearchField(value);
 }
 
 /** @type {GeminiService | null} */

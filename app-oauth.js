@@ -8,6 +8,7 @@ import pkg from '@slack/oauth';
 const { FileInstallationStore } = pkg;
 
 import { registerListeners } from './listeners/index.js';
+import { startSyncService } from './services/sync-service.js';
 
 const manifest = JSON.parse(readFileSync('manifest.json', 'utf-8'));
 const botScopes = manifest.oauth_config.scopes.bot;
@@ -60,5 +61,10 @@ registerListeners(app);
 (async () => {
   const port = Number.parseInt(process.env.PORT || '3000', 10);
   await app.start(port);
+  startSyncService({
+    logger: app.logger,
+    client: app.client,
+    intervalMs: Number(process.env.SYNC_INTERVAL_MS || 300000),
+  });
   app.logger.info(`Anchor is running on port ${port}!`);
 })();

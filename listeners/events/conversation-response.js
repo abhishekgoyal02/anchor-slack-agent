@@ -12,13 +12,22 @@ const LOADING_MESSAGES = [
 /**
  * Show the existing Slack assistant loading state.
  * @param {Function} setStatus
+ * @param {import('../../mcp/logger.js').McpLogger} [logger]
  * @returns {Promise<void>}
  */
-export async function setThinkingStatus(setStatus) {
-  await setStatus({
-    status: 'Thinking\u2026',
-    loading_messages: LOADING_MESSAGES,
-  });
+export async function setThinkingStatus(setStatus, logger) {
+  if (typeof setStatus !== 'function') {
+    return;
+  }
+
+  try {
+    await setStatus({
+      status: 'Thinking\u2026',
+      loading_messages: LOADING_MESSAGES,
+    });
+  } catch (error) {
+    logger?.warn?.('Failed to set Slack assistant status', serializeError(error));
+  }
 }
 
 /**
@@ -46,4 +55,26 @@ export async function streamAssistantResponse(sayStream, responseText) {
   const streamer = sayStream();
   await streamer.append({ markdown_text: responseText });
   await streamer.stop({ blocks: buildFeedbackBlocks() });
+}
+
+/**
+ * @param {unknown} error
+ * @returns {Record<string, unknown>}
+ */
+function serializeError(error) {
+  if (!(error instanceof Error)) {
+    return { error };
+  }
+
+  const context = {
+    name: error.name,
+    message: error.message,
+    stack: error.stack,
+  };
+
+  if (error.cause !== undefined) {
+    context.cause = serializeError(error.cause);
+  }
+
+  return context;
 }
