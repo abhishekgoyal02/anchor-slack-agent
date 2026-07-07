@@ -10,7 +10,7 @@ const DEFAULT_TOOL_CALLING_SYSTEM_INSTRUCTION = [
   'Use this exact top layout: I found <count> commitments related to <query>:',
   'Do not use bullets, numbering, emojis, JSON, summaries, or section headings.',
   'Render each commitment as exactly one paragraph with every field on the same line.',
-  'Keep this exact field order and labels: Title:, Status:, Assignee:, Created At:, Updated At:, GitHub Issue:',
+  'Keep this exact field order and bold only these labels: **Title:**, **Status:**, **Assignee:**, **Created At:**, **Updated At:**, **GitHub Issue:**',
   'Never put fields on separate lines and never use commas between fields.',
   'Use each provided status exactly as returned by the tool.',
   'Format Created At and Updated At as YYYY-MM-DD only.',
@@ -438,13 +438,13 @@ function formatSearchCommitmentToolAnswer(toolCalls) {
   results.forEach((result, index) => {
     const commitment = normalizeSearchResult(result);
     const fields = [
-      `*Title:* ${formatSentenceSearchField(commitment.title)}`,
-      `*Status:* ${formatSearchStatus(commitment.status)}.`,
+      `**Title:** ${formatSentenceSearchField(commitment.title)}`,
+      `**Status:** ${formatSearchStatus(commitment.status)}.`,
     ];
 
     appendOptionalSearchField(fields, 'Assignee', formatSearchAssignee(commitment.assignee));
-    fields.push(`*Created At:* ${formatSearchDate(commitment.createdAt)}.`);
-    fields.push(`*Updated At:* ${formatSearchDate(commitment.updatedAt)}.`);
+    fields.push(`**Created At:** ${formatSearchDate(commitment.createdAt)}.`);
+    fields.push(`**Updated At:** ${formatSearchDate(commitment.updatedAt)}.`);
     appendOptionalSearchField(fields, 'GitHub Issue', formatSearchGithubIssue(commitment.githubIssue));
 
     lines.push(`• ${fields.join(' ')}`);
@@ -482,7 +482,7 @@ function appendOptionalSearchField(fields, label, formatted) {
     return;
   }
 
-  fields.push(`*${label}:* ${formatted}.`);
+  fields.push(`**${label}:** ${formatted}.`);
 }
 
 /**
