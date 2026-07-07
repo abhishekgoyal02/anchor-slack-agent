@@ -27,6 +27,7 @@ describe('detectCommitment', () => {
       "I'll review this tomorrow",
       "I'll send credentials today",
       "I'll fix authentication before Friday",
+      "I'll migrate authentication to OAuth 2.0 this weekend",
       "I'll investigate the issue.",
       "I'll contact the client.",
       "I'll submit the assignment.",
@@ -69,6 +70,21 @@ describe('detectCommitment', () => {
     for (const example of examples) {
       assert.strictEqual(detectCommitment(example), true, example);
     }
+  });
+
+  it('detects multiline commitments as a single commitment', () => {
+    const message = [
+      "I'll migrate authentication to OAuth 2.0 this weekend.",
+      '',
+      'Need to:',
+      '- update JWT validation',
+      '- replace refresh tokens',
+      '- update documentation',
+      '- verify login flow',
+      '- write tests',
+    ].join('\n');
+
+    assert.strictEqual(detectCommitment(message), true);
   });
 
   it('rejects incomplete or uncertain statements', () => {

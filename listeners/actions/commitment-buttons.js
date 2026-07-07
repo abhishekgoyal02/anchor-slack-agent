@@ -1,3 +1,4 @@
+import { createContextSnapshot } from '../../services/context-snapshot.js';
 import { createIssue } from '../../services/github-service.js';
 import {
   findOpenCommitmentByThreadAndText,
@@ -17,6 +18,7 @@ import {
  *   channelId: string,
  *   messageTs: string,
  *   threadTs: string,
+ *   requestedBy?: string,
  * }} CommitmentActionContext
  */
 
@@ -32,6 +34,7 @@ function getCommitmentActionContext(body) {
   const channelId = actionBody.channel?.id;
   const messageTs = actionBody.message?.ts;
   const threadTs = actionBody.message?.thread_ts || messageTs;
+  const requestedBy = actionBody.user?.username || actionBody.user?.name;
 
   if (
     typeof text !== 'string' ||
@@ -44,7 +47,7 @@ function getCommitmentActionContext(body) {
     return null;
   }
 
-  return { text, userId, channelId, messageTs, threadTs };
+  return { text, userId, channelId, messageTs, threadTs, requestedBy };
 }
 
 /**
@@ -106,7 +109,7 @@ export async function handleCommitmentConfirm({ ack, body, client, logger }) {
   const actionContext = await validateActionContext(body, client, logger, 'confirmation');
   if (!actionContext) return;
 
-  const { channelId, messageTs, text, threadTs, userId } = actionContext;
+  const { channelId, messageTs, requestedBy, text, threadTs, userId } = actionContext;
 
   try {
     const existing = await findOpenCommitmentByThreadAndText(threadTs, text);
@@ -131,7 +134,8 @@ export async function handleCommitmentConfirm({ ack, body, client, logger }) {
     let githubError = false;
 
     try {
-      issue = await createIssue({ text, userId, threadTs }, { logger });
+      const snapshot = await createContextSnapshot(text, { logger });
+      issue = await createIssue({ text, userId, threadTs, requestedBy, snapshot }, { logger });
       const updated = await updateCommitmentGithubMetadata(commitmentId, {
         issueNumber: issue.number,
         issueUrl: issue.url,

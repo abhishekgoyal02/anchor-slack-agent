@@ -49,6 +49,39 @@ describe('message listeners', () => {
     assert.match(sayCalls[0].text, /Potential commitment detected/);
     assert.strictEqual(sayCalls[0].thread_ts, '1710000000.000200');
   });
+
+  it('preserves multiline commitment text in the confirmation card payload', async () => {
+    const sayCalls = [];
+    const text = [
+      "I'll migrate authentication to OAuth 2.0 this weekend.",
+      '',
+      'Need to:',
+      '- update JWT validation',
+      '- replace refresh tokens',
+      '- update documentation',
+      '- verify login flow',
+      '- write tests',
+    ].join('\n');
+
+    await handleMessage({
+      event: {
+        channel: 'D123',
+        channel_type: 'im',
+        text,
+        ts: '1710000000.000300',
+      },
+      logger: createLogger(),
+      say: async (payload) => {
+        sayCalls.push(payload);
+      },
+      sayStream: failIfCalled('sayStream'),
+      setStatus: failIfCalled('setStatus'),
+    });
+
+    assert.strictEqual(sayCalls.length, 1);
+    assert.strictEqual(sayCalls[0].blocks[0].text.text, `⚓ *Potential commitment detected*\n\n>${text}`);
+    assert.strictEqual(sayCalls[0].blocks[1].elements[0].value, text);
+  });
 });
 
 function createLogger() {

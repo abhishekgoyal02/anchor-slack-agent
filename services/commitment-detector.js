@@ -12,6 +12,7 @@ const ACTION_VERBS = [
   'prepare',
   'write',
   'fix',
+  'migrate',
   'deploy',
   'push',
   'merge',
