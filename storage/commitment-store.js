@@ -162,10 +162,10 @@ export async function updateCommitmentGithubMetadata(id, { issueNumber, issueUrl
  */
 export async function markCommitmentCompleted(id) {
   await initPromise;
-  const { changes } = await run("UPDATE commitments SET status = ?, completed_at = datetime('now') WHERE id = ?", [
-    'completed',
-    id,
-  ]);
+  const { changes } = await run(
+    "UPDATE commitments SET status = ?, completed_at = datetime('now') WHERE id = ? AND status = ?",
+    ['completed', id, 'open'],
+  );
   return changes > 0;
 }
 

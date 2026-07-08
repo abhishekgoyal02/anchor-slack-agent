@@ -98,6 +98,19 @@ describe('commitment-store', () => {
     assert.ok(commitment.completed_at.length > 0);
   });
 
+  it('does not transition a commitment that is already completed', async () => {
+    const id = await saveCommitment({
+      text: `Already completed commitment ${Date.now()}`,
+      userId: 'U123',
+      channelId: 'C123',
+      threadTs: `T-complete-twice-${Date.now()}`,
+      messageTs: `M-complete-twice-${Date.now()}`,
+    });
+
+    assert.strictEqual(await markCommitmentCompleted(id), true);
+    assert.strictEqual(await markCommitmentCompleted(id), false);
+  });
+
   it('returns false when completing a missing commitment', async () => {
     const updated = await markCommitmentCompleted(-1);
 

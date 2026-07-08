@@ -181,6 +181,8 @@ describe('github-service', () => {
           number: 12,
           state: 'closed',
           html_url: 'https://github.com/owner/repo/issues/12',
+          title: 'Finish API',
+          body: '# Context Snapshot',
         }),
       };
     };
@@ -194,6 +196,8 @@ describe('github-service', () => {
       number: 12,
       state: 'closed',
       url: 'https://github.com/owner/repo/issues/12',
+      title: 'Finish API',
+      body: '# Context Snapshot',
     });
     assert.strictEqual(request.url, 'https://api.github.com/repos/owner/repo/issues/12');
     assert.strictEqual(request.options.method, 'GET');

@@ -22,6 +22,8 @@ const GITHUB_API_VERSION = '2022-11-28';
  *   number: number,
  *   state: string,
  *   url: string,
+ *   title: string,
+ *   body: string,
  * }} GitHubIssueStatus
  */
 
@@ -307,6 +309,8 @@ export async function getIssue(issueNumber, options = {}) {
     number: data.number,
     state: data.state,
     url: data.html_url,
+    title: typeof data.title === 'string' ? data.title : '',
+    body: typeof data.body === 'string' ? data.body : '',
   };
 }
 
