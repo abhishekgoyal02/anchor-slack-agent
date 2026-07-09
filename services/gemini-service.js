@@ -515,12 +515,49 @@ function normalizeSearchResult(value) {
  * @returns {string}
  */
 function formatSentenceSearchField(value) {
-  const formatted = formatRequiredSearchField(value);
+  const formatted = formatSearchTitle(value);
   if (!formatted) {
     return '.';
   }
 
   return /[.!?]$/.test(formatted) ? formatted : `${formatted}.`;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function formatSearchTitle(value) {
+  const formatted = formatRequiredSearchField(value);
+  if (!formatted) {
+    return '';
+  }
+
+  const titleLines = [];
+  for (const line of formatted.split(/\r?\n/)) {
+    const trimmedLine = line.trim();
+    if (!trimmedLine) {
+      continue;
+    }
+
+    if (isContextSnapshotHeading(trimmedLine)) {
+      break;
+    }
+
+    titleLines.push(trimmedLine);
+  }
+
+  return titleLines.join(' ').trim();
+}
+
+/**
+ * @param {string} line
+ * @returns {boolean}
+ */
+function isContextSnapshotHeading(line) {
+  return /^(?:#{1,6}\s*)?(?:Summary|Requirements|Need to|Dependencies|Risk|Potential Risks|Complexity|Labels|Due Date|Context Snapshot|Generated Context|generated_context)(?::\s*.*)?$/i.test(
+    line,
+  );
 }
 
 /**

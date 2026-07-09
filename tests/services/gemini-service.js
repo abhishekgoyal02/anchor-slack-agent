@@ -325,6 +325,64 @@ describe('gemini-service', () => {
       );
     });
 
+    it('does not render Context Snapshot fields in Ask Anchor search results', async () => {
+      const mockClient = createSequentialGeminiClient([
+        { functionCalls: [{ name: 'search_commitments', args: { query: 'authentication' } }] },
+        { text: 'ignored because formatting is deterministic' },
+      ]);
+      const service = new GeminiService({ client: mockClient, model: 'mock-model' });
+
+      const response = await service.generateTextWithTools('Find authentication commitments', {
+        mcpServer: createMockMcpServer({
+          handleToolRequest: async () => ({
+            ok: true,
+            result: [
+              {
+                title: [
+                  "I'll migrate authentication to OAuth 2.0 this weekend",
+                  '',
+                  'Need to:',
+                  '- update JWT validation',
+                  '- replace refresh tokens',
+                  '- update docs',
+                  '- verify login flow',
+                ].join('\n'),
+                status: 'Completed',
+                assignee: 'U0BBN0MUXS7',
+                createdAt: '2026-07-07 09:00:00',
+                updatedAt: '2026-07-08 10:30:00',
+                githubIssue: '20',
+                summary: 'Authentication migration work',
+                requirements: ['update JWT validation'],
+                need_to: ['replace refresh tokens'],
+                dependencies: ['auth service'],
+                risk: 'Token regression',
+                complexity: 'medium',
+                labels: ['authentication'],
+                generated_context: 'Context Snapshot content',
+              },
+            ],
+          }),
+        }),
+      });
+
+      assert.strictEqual(
+        response.text,
+        [
+          'I found 1 commitments related to authentication:',
+          '',
+          "• **Title:** I'll migrate authentication to OAuth 2.0 this weekend. **Status:** ✅ Completed. **Assignee:** <@U0BBN0MUXS7>. **Created At:** 2026-07-07. **Updated At:** 2026-07-08. **GitHub Issue:** #20.",
+        ].join('\n'),
+      );
+      assert.doesNotMatch(response.text, /Need to:/);
+      assert.doesNotMatch(response.text, /Requirements/i);
+      assert.doesNotMatch(response.text, /Summary/i);
+      assert.doesNotMatch(response.text, /Dependencies/i);
+      assert.doesNotMatch(response.text, /Context Snapshot/i);
+      assert.doesNotMatch(response.text, /update JWT validation/);
+      assert.doesNotMatch(response.text, /replace refresh tokens/);
+    });
+
     it('formats search results on runtimes without Array.prototype.findLast', async () => {
       const originalFindLast = Array.prototype.findLast;
       Array.prototype.findLast = undefined;
