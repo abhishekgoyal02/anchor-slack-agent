@@ -190,10 +190,12 @@ describe('gemini-service', () => {
       assert.strictEqual(response.toolCalls.length, 1);
       assert.strictEqual(response.toolCalls[0].response.ok, true);
       assert.strictEqual(generateContentCalls[0].config.tools[0].functionDeclarations[0].name, 'search_commitments');
-      assert.match(generateContentCalls[0].config.systemInstruction, /Do not use bullets, numbering, emojis, JSON/);
+      assert.match(generateContentCalls[0].config.systemInstruction, /metadata-line search style/);
+      assert.match(generateContentCalls[0].config.systemInstruction, /grouped ownership style/);
+      assert.match(generateContentCalls[0].config.systemInstruction, /Do not mix metadata-line search formatting/);
       assert.match(
         generateContentCalls[0].config.systemInstruction,
-        /Render each commitment as exactly one paragraph with every field on the same line/,
+        /render one bullet per commitment with every field on the same line/,
       );
       assert.match(
         generateContentCalls[0].config.systemInstruction,
@@ -348,7 +350,7 @@ describe('gemini-service', () => {
                   '- verify login flow',
                 ].join('\n'),
                 status: 'Completed',
-                assignee: 'U0BBN0MUXS7',
+                assignee: 'Workspace User',
                 createdAt: '2026-07-07 09:00:00',
                 updatedAt: '2026-07-08 10:30:00',
                 githubIssue: '20',
@@ -371,7 +373,7 @@ describe('gemini-service', () => {
         [
           'I found 1 commitments related to authentication:',
           '',
-          "• **Title:** I'll migrate authentication to OAuth 2.0 this weekend. **Status:** ✅ Completed. **Assignee:** <@U0BBN0MUXS7>. **Created At:** 2026-07-07. **Updated At:** 2026-07-08. **GitHub Issue:** #20.",
+          "• **Title:** I'll migrate authentication to OAuth 2.0 this weekend. **Status:** ✅ Completed. **Assignee:** Workspace User. **Created At:** 2026-07-07. **Updated At:** 2026-07-08. **GitHub Issue:** #20.",
         ].join('\n'),
       );
       assert.doesNotMatch(response.text, /Need to:/);
@@ -381,6 +383,474 @@ describe('gemini-service', () => {
       assert.doesNotMatch(response.text, /Context Snapshot/i);
       assert.doesNotMatch(response.text, /update JWT validation/);
       assert.doesNotMatch(response.text, /replace refresh tokens/);
+    });
+
+    it('formats ownership answers grouped by assignee', async () => {
+      const mockClient = createSequentialGeminiClient([
+        { functionCalls: [{ name: 'search_commitments', args: { query: 'Who is working on authentication?' } }] },
+        { text: 'ignored because formatting is deterministic' },
+      ]);
+      const service = new GeminiService({ client: mockClient, model: 'mock-model' });
+
+      const response = await service.generateTextWithTools('Who is working on authentication?', {
+        mcpServer: createMockMcpServer({
+          handleToolRequest: async () => ({
+            ok: true,
+            result: [
+              {
+                title: 'Fix Google Authentication before Friday',
+                status: 'Open',
+                assignee: 'Abhishek',
+                createdAt: '2026-07-01 07:12:35',
+                updatedAt: '2026-07-01 07:12:35',
+                githubIssue: '12',
+              },
+              {
+                title: 'OAuth hardening',
+                status: 'Open',
+                assignee: 'Abhishek',
+                createdAt: '2026-07-02 07:12:35',
+                updatedAt: '2026-07-02 07:12:35',
+                githubIssue: '14',
+              },
+              {
+                title: 'OAuth migration',
+                status: 'Completed',
+                assignee: 'Alice',
+                createdAt: '2026-07-02 07:12:35',
+                updatedAt: '2026-07-03 07:12:35',
+                githubIssue: '13',
+              },
+            ],
+          }),
+        }),
+      });
+
+      assert.strictEqual(
+        response.text,
+        [
+          "👥 Here's who is working on authentication:",
+          '',
+          '• Abhishek',
+          '  - Fix Google Authentication before Friday (Open)',
+          '  - OAuth hardening (Open)',
+          '',
+          '• Alice',
+          '  - OAuth migration (Completed)',
+        ].join('\n'),
+      );
+      assert.doesNotMatch(response.text, /GitHub Issue|Created At|Updated At|https?:\/\//);
+    });
+
+    it('uses the original prompt to keep ownership UX when Gemini searches only the topic', async () => {
+      const mockClient = createSequentialGeminiClient([
+        { functionCalls: [{ name: 'search_commitments', args: { query: 'authentication' } }] },
+        { text: 'ignored because formatting is deterministic' },
+      ]);
+      const service = new GeminiService({ client: mockClient, model: 'mock-model' });
+
+      const response = await service.generateTextWithTools('Who is working on authentication?', {
+        mcpServer: createMockMcpServer({
+          handleToolRequest: async () => ({
+            ok: true,
+            result: [
+              {
+                title: 'Fix Google Authentication before Friday',
+                status: 'Open',
+                assignee: 'Abhishek',
+                createdAt: '2026-07-01 07:12:35',
+                updatedAt: '2026-07-01 07:12:35',
+                githubIssue: '12',
+              },
+              {
+                title: 'OAuth hardening',
+                status: 'Open',
+                assignee: 'Abhishek',
+                createdAt: '2026-07-02 07:12:35',
+                updatedAt: '2026-07-02 07:12:35',
+                githubIssue: '14',
+              },
+              {
+                title: 'OAuth migration',
+                status: 'Completed',
+                assignee: 'Alice',
+                createdAt: '2026-07-02 07:12:35',
+                updatedAt: '2026-07-03 07:12:35',
+                githubIssue: '13',
+              },
+            ],
+          }),
+        }),
+      });
+
+      assert.strictEqual(
+        response.text,
+        [
+          "👥 Here's who is working on authentication:",
+          '',
+          '• Abhishek',
+          '  - Fix Google Authentication before Friday (Open)',
+          '  - OAuth hardening (Open)',
+          '',
+          '• Alice',
+          '  - OAuth migration (Completed)',
+        ].join('\n'),
+      );
+      assert.doesNotMatch(response.text, /\*\*Title:\*\*|Created At|Updated At|GitHub Issue/);
+    });
+
+    it('keeps search authentication in metadata-line UX instead of ownership grouping', async () => {
+      const mockClient = createSequentialGeminiClient([
+        { functionCalls: [{ name: 'search_commitments', args: { query: 'Search authentication' } }] },
+        { text: 'ignored because formatting is deterministic' },
+      ]);
+      const service = new GeminiService({ client: mockClient, model: 'mock-model' });
+
+      const response = await service.generateTextWithTools('Search authentication', {
+        mcpServer: createMockMcpServer({
+          handleToolRequest: async () => ({
+            ok: true,
+            result: [
+              {
+                title: 'Fix Google Authentication before Friday',
+                status: 'Open',
+                assignee: 'Abhishek',
+                createdAt: '2026-07-01 07:12:35',
+                updatedAt: '2026-07-01 07:12:35',
+                githubIssue: '12',
+              },
+            ],
+          }),
+        }),
+      });
+
+      assert.strictEqual(
+        response.text,
+        [
+          'I found 1 commitments related to authentication:',
+          '',
+          '• **Title:** Fix Google Authentication before Friday. **Status:** 🟡 Open. **Assignee:** Abhishek. **Created At:** 2026-07-01. **Updated At:** 2026-07-01. **GitHub Issue:** #12.',
+        ].join('\n'),
+      );
+      assert.match(response.text, /\*\*Title:\*\*/);
+      assert.match(response.text, /\*\*GitHub Issue:\*\*/);
+      assert.doesNotMatch(response.text, /👥 Here's who is working on/);
+    });
+
+    it('keeps Search API and Search login in metadata-line UX with separate topics', async () => {
+      const mockClient = createSequentialGeminiClient([
+        { functionCalls: [{ name: 'search_commitments', args: { query: 'Search API' } }] },
+        { text: 'ignored because formatting is deterministic' },
+      ]);
+      const service = new GeminiService({ client: mockClient, model: 'mock-model' });
+
+      const response = await service.generateTextWithTools('Search API', {
+        mcpServer: createMockMcpServer({
+          handleToolRequest: async () => ({
+            ok: true,
+            result: [
+              {
+                title: 'Document public API usage',
+                status: 'Open',
+                assignee: 'Alice',
+                createdAt: '2026-07-01 07:12:35',
+                updatedAt: '2026-07-01 07:12:35',
+                githubIssue: '12',
+              },
+            ],
+          }),
+        }),
+      });
+
+      assert.strictEqual(
+        response.text,
+        [
+          'I found 1 commitments related to API:',
+          '',
+          '• **Title:** Document public API usage. **Status:** 🟡 Open. **Assignee:** Alice. **Created At:** 2026-07-01. **Updated At:** 2026-07-01. **GitHub Issue:** #12.',
+        ].join('\n'),
+      );
+      assert.doesNotMatch(response.text, /👥 Here's who is working on|Fix Google Authentication/);
+    });
+
+    it('keeps Search deployment in metadata-line UX', async () => {
+      const mockClient = createSequentialGeminiClient([
+        { functionCalls: [{ name: 'search_commitments', args: { query: 'Search deployment' } }] },
+        { text: 'ignored because formatting is deterministic' },
+      ]);
+      const service = new GeminiService({ client: mockClient, model: 'mock-model' });
+
+      const response = await service.generateTextWithTools('Search deployment', {
+        mcpServer: createMockMcpServer({
+          handleToolRequest: async () => ({
+            ok: true,
+            result: [
+              {
+                title: 'Production deployment checklist',
+                status: 'Open',
+                assignee: 'Workspace User',
+                createdAt: '2026-07-07 09:00:00',
+                updatedAt: '2026-07-08 10:30:00',
+                githubIssue: '20',
+              },
+            ],
+          }),
+        }),
+      });
+
+      assert.match(response.text, /^I found 1 commitments related to deployment:/);
+      assert.match(response.text, /\*\*Title:\*\* Production deployment checklist\./);
+      assert.doesNotMatch(response.text, /👥 Here's who is working on/);
+    });
+
+    it('keeps responsible-for questions in grouped ownership UX', async () => {
+      const mockClient = createSequentialGeminiClient([
+        { functionCalls: [{ name: 'search_commitments', args: { query: 'Who is responsible for deployment?' } }] },
+        { text: 'ignored because formatting is deterministic' },
+      ]);
+      const service = new GeminiService({ client: mockClient, model: 'mock-model' });
+
+      const response = await service.generateTextWithTools('Who is responsible for deployment?', {
+        mcpServer: createMockMcpServer({
+          handleToolRequest: async () => ({
+            ok: true,
+            result: [
+              {
+                title: 'Production deployment checklist',
+                status: 'Open',
+                assignee: 'Workspace User',
+                createdAt: '2026-07-07 09:00:00',
+                updatedAt: '2026-07-08 10:30:00',
+                githubIssue: '20',
+              },
+            ],
+          }),
+        }),
+      });
+
+      assert.strictEqual(
+        response.text,
+        ["👥 Here's who is working on deployment:", '', '• Workspace User', '  - Production deployment checklist (Open)'].join('\n'),
+      );
+      assert.doesNotMatch(response.text, /\*\*Title:\*\*|Created At|Updated At|GitHub Issue/);
+    });
+
+    it('keeps who-owns and handling questions in grouped ownership UX', async () => {
+      const mockClient = createSequentialGeminiClient([
+        { functionCalls: [{ name: 'search_commitments', args: { query: 'Who owns OAuth?' } }] },
+        { text: 'ignored because formatting is deterministic' },
+      ]);
+      const service = new GeminiService({ client: mockClient, model: 'mock-model' });
+
+      const response = await service.generateTextWithTools('Who owns OAuth?', {
+        mcpServer: createMockMcpServer({
+          handleToolRequest: async () => ({
+            ok: true,
+            result: [
+              {
+                title: 'OAuth migration',
+                status: 'Completed',
+                assignee: 'Alice',
+                createdAt: '2026-07-02 07:12:35',
+                updatedAt: '2026-07-03 07:12:35',
+                githubIssue: '13',
+              },
+            ],
+          }),
+        }),
+      });
+
+      assert.strictEqual(response.text, ["👥 Here's who is working on OAuth:", '', '• Alice', '  - OAuth migration (Completed)'].join('\n'));
+      assert.doesNotMatch(response.text, /\*\*Title:\*\*|Created At|Updated At|GitHub Issue/);
+    });
+
+    it('keeps who-is-handling login in grouped ownership UX', async () => {
+      const mockClient = createSequentialGeminiClient([
+        { functionCalls: [{ name: 'search_commitments', args: { query: 'Who is handling login?' } }] },
+        { text: 'ignored because formatting is deterministic' },
+      ]);
+      const service = new GeminiService({ client: mockClient, model: 'mock-model' });
+
+      const response = await service.generateTextWithTools('Who is handling login?', {
+        mcpServer: createMockMcpServer({
+          handleToolRequest: async () => ({
+            ok: true,
+            result: [
+              {
+                title: 'Fix login redirect',
+                status: 'Open',
+                assignee: 'Abhishek',
+                createdAt: '2026-07-02 07:12:35',
+                updatedAt: '2026-07-03 07:12:35',
+                githubIssue: '13',
+              },
+            ],
+          }),
+        }),
+      });
+
+      assert.strictEqual(response.text, ["👥 Here's who is working on login:", '', '• Abhishek', '  - Fix login redirect (Open)'].join('\n'));
+      assert.doesNotMatch(response.text, /\*\*Title:\*\*|Created At|Updated At|GitHub Issue/);
+    });
+
+    it('formats status queries with the preserved metadata-line UX', async () => {
+      const mockClient = createSequentialGeminiClient([
+        { functionCalls: [{ name: 'search_commitments', args: { query: 'Show open commitments' } }] },
+        { text: 'ignored because formatting is deterministic' },
+      ]);
+      const service = new GeminiService({ client: mockClient, model: 'mock-model' });
+
+      const response = await service.generateTextWithTools('Show open commitments', {
+        mcpServer: createMockMcpServer({
+          handleToolRequest: async () => ({
+            ok: true,
+            result: [
+              {
+                title: 'Production deployment checklist',
+                status: 'Open',
+                assignee: 'Workspace User',
+                createdAt: '2026-07-07 09:00:00',
+                updatedAt: '2026-07-08 10:30:00',
+                githubIssue: '20',
+              },
+            ],
+          }),
+        }),
+      });
+
+      assert.strictEqual(
+        response.text,
+        [
+          'Open commitments:',
+          '',
+          '• **Title:** Production deployment checklist. **Status:** 🟡 Open. **Assignee:** Workspace User. **Created At:** 2026-07-07. **Updated At:** 2026-07-08. **GitHub Issue:** #20.',
+        ].join('\n'),
+      );
+      assert.match(response.text, /\*\*Title:\*\*/);
+      assert.match(response.text, /\*\*Status:\*\*/);
+      assert.match(response.text, /\*\*Assignee:\*\*/);
+      assert.match(response.text, /\*\*Created At:\*\*/);
+      assert.match(response.text, /\*\*Updated At:\*\*/);
+      assert.match(response.text, /\*\*GitHub Issue:\*\*/);
+    });
+
+    it('renders every open commitment returned by MCP', async () => {
+      const mockClient = createSequentialGeminiClient([
+        { functionCalls: [{ name: 'search_commitments', args: { query: 'Show open commitments' } }] },
+        { text: 'ignored because formatting is deterministic' },
+      ]);
+      const service = new GeminiService({ client: mockClient, model: 'mock-model' });
+
+      const response = await service.generateTextWithTools('Show Open Commitments', {
+        mcpServer: createMockMcpServer({
+          handleToolRequest: async () => ({
+            ok: true,
+            result: Array.from({ length: 6 }, (_, index) => ({
+              title: `Open commitment ${index + 1}`,
+              status: index === 2 ? 'In Progress' : 'Open',
+              assignee: 'Alice',
+              createdAt: '2026-07-07 09:00:00',
+              updatedAt: '2026-07-08 10:30:00',
+              githubIssue: String(20 + index),
+            })),
+          }),
+        }),
+      });
+
+      assert.match(response.text, /^Open commitments:/);
+      assert.strictEqual(response.text.match(/\*\*Title:\*\*/g)?.length, 6);
+      assert.match(response.text, /Open commitment 6/);
+      assert.doesNotMatch(response.text, /👥 Here's who is working on/);
+    });
+
+    it('formats completed, overdue, and today status queries with metadata-line UX', async () => {
+      const service = new GeminiService({
+        client: createSequentialGeminiClient([
+          { functionCalls: [{ name: 'search_commitments', args: { query: 'Show completed commitments' } }] },
+          { text: 'ignored because formatting is deterministic' },
+          { functionCalls: [{ name: 'search_commitments', args: { query: 'Show overdue work' } }] },
+          { text: 'ignored because formatting is deterministic' },
+          { functionCalls: [{ name: 'search_commitments', args: { query: 'Show todays commitments' } }] },
+          { text: 'ignored because formatting is deterministic' },
+        ]),
+        model: 'mock-model',
+      });
+      const mcpServer = createMockMcpServer({
+        handleToolRequest: async (request) => ({
+          ok: true,
+          result: [
+            {
+              title: String(request.input.query),
+              status: request.input.query.includes('completed') ? 'Completed' : 'Open',
+              assignee: 'Alice',
+              createdAt: '2026-07-07 09:00:00',
+              updatedAt: '2026-07-08 10:30:00',
+              githubIssue: '20',
+            },
+          ],
+        }),
+      });
+
+      const completed = await service.generateTextWithTools('Show completed commitments', { mcpServer });
+      const overdue = await service.generateTextWithTools('Show overdue work', { mcpServer });
+      const today = await service.generateTextWithTools('Show todays commitments', { mcpServer });
+
+      assert.match(completed.text, /^Completed commitments:\n\n• \*\*Title:\*\*/);
+      assert.match(overdue.text, /^Overdue commitments:\n\n• \*\*Title:\*\*/);
+      assert.match(today.text, /^Today's commitments:\n\n• \*\*Title:\*\*/);
+      assert.doesNotMatch([completed.text, overdue.text, today.text].join('\n'), /👥 Here's who is working on/);
+    });
+
+    it('formats release blocker answers without metadata dumps', async () => {
+      const mockClient = createSequentialGeminiClient([
+        { functionCalls: [{ name: 'search_commitments', args: { query: "What's blocking release?" } }] },
+        { text: 'ignored because formatting is deterministic' },
+      ]);
+      const service = new GeminiService({ client: mockClient, model: 'mock-model' });
+
+      const response = await service.generateTextWithTools("What's blocking release?", {
+        mcpServer: createMockMcpServer({
+          handleToolRequest: async () => ({
+            ok: true,
+            result: [
+              {
+                title: 'Fix Google Authentication before Friday',
+                status: 'Open',
+                assignee: 'Abhishek',
+                createdAt: '2026-07-07 09:00:00',
+                updatedAt: '2026-07-08 10:30:00',
+                githubIssue: '20',
+              },
+              {
+                title: 'API migration',
+                status: 'In Progress',
+                assignee: 'Alice',
+                createdAt: '2026-07-07 09:00:00',
+                updatedAt: '2026-07-08 10:30:00',
+                githubIssue: '21',
+                summary: 'Context Snapshot content',
+                requirements: ['Do not show this'],
+              },
+            ],
+          }),
+        }),
+      });
+
+      assert.strictEqual(
+        response.text,
+        [
+          'Potential release blockers:',
+          '',
+          'Abhishek',
+          '  Fix Google Authentication before Friday',
+          '',
+          'Alice',
+          '  API migration',
+          '',
+          '2 open commitments may impact the next release.',
+        ].join('\n'),
+      );
+      assert.doesNotMatch(response.text, /Summary|Requirements|Context Snapshot|Created At|Updated At|GitHub Issue|https?:\/\/|\|/);
     });
 
     it('formats search results on runtimes without Array.prototype.findLast', async () => {

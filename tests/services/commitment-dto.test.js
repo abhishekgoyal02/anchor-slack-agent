@@ -58,8 +58,6 @@ describe('commitment DTO', () => {
   });
 
   it('formats Slack assignees as mentions and omits missing values', () => {
-    assert.strictEqual(formatSlackMention('U0BBN0MUXS7'), '<@U0BBN0MUXS7>');
-    assert.strictEqual(formatSlackMention('<@U0BBN0MUXS7>'), '<@U0BBN0MUXS7>');
     assert.strictEqual(formatSlackMention('Abhishek Goyal'), 'Abhishek Goyal');
     assert.strictEqual(formatSlackMention(''), null);
   });

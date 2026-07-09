@@ -7,9 +7,12 @@ const DEFAULT_MODEL = 'gemini-2.5-flash';
 const DEFAULT_MAX_TOOL_ITERATIONS = 5;
 const DEFAULT_TOOL_CALLING_SYSTEM_INSTRUCTION = [
   'Format search_commitments answers as plain text only.',
-  'Use this exact top layout: I found <count> commitments related to <query>:',
-  'Do not use bullets, numbering, emojis, JSON, summaries, or section headings.',
-  'Render each commitment as exactly one paragraph with every field on the same line.',
+  'Choose the Ask Anchor answer style from the user query before writing the answer.',
+  'For search, show, list, find, open, completed, overdue, and today commitment queries, use the metadata-line search style.',
+  'For who owns, who is working on, who is handling, who is doing, and who is responsible for queries, use the grouped ownership style.',
+  'Do not mix metadata-line search formatting with grouped ownership formatting in the same answer.',
+  'For search style, use this exact top layout: I found <count> commitments related to <query>:',
+  'For search style, render one bullet per commitment with every field on the same line.',
   'Keep this exact field order and bold only these labels: **Title:**, **Status:**, **Assignee:**, **Created At:**, **Updated At:**, **GitHub Issue:**',
   'Never put fields on separate lines and never use commas between fields.',
   'Use each provided status exactly as returned by the tool.',
@@ -17,6 +20,8 @@ const DEFAULT_TOOL_CALLING_SYSTEM_INSTRUCTION = [
   'If assignee is missing, omit the Assignee field entirely.',
   'If assignee is a Slack user ID like U123ABC45, format it as a mention: <@U123ABC45>.',
   'For GitHub issue, show only # followed by the issue number after the label, for example: GitHub Issue: #12.',
+  'For ownership style, group results by assignee and do not include Created At, Updated At, or GitHub Issue.',
+  'Never expose Context Snapshot fields such as Summary, Requirements, Need to, Dependencies, Risk, Complexity, Labels, or Due Date.',
   'Never output internal fields such as channel, thread, or database IDs.',
   "If there are no results, reply naturally: I couldn't find any commitments related to '<query>'.",
 ].join(' ');
@@ -211,7 +216,7 @@ export class GeminiService {
 
         if (functionCalls.length === 0) {
           const text = response.text?.trim();
-          const toolFormattedText = formatSearchCommitmentToolAnswer(toolCalls);
+          const toolFormattedText = formatSearchCommitmentToolAnswer(toolCalls, prompt);
           const finalText = toolFormattedText ?? text;
 
           if (!finalText) {
@@ -414,9 +419,10 @@ function buildToolCallingSystemInstruction(overrideInstruction) {
 
 /**
  * @param {GeminiToolCallTrace[]} toolCalls
+ * @param {string} prompt
  * @returns {string | null}
  */
-function formatSearchCommitmentToolAnswer(toolCalls) {
+function formatSearchCommitmentToolAnswer(toolCalls, prompt) {
   const searchCall = findLastSearchCommitmentToolCall(toolCalls);
   if (!searchCall?.response.ok || !Array.isArray(searchCall.response.result)) {
     return null;
@@ -424,8 +430,20 @@ function formatSearchCommitmentToolAnswer(toolCalls) {
 
   const query = typeof searchCall.args.query === 'string' ? searchCall.args.query : '';
   const results = searchCall.response.result;
+  const promptIntent = getAnswerIntent(prompt);
+  const toolIntent = getAnswerIntent(query);
+  const answerIntent = promptIntent.kind === 'topic' && toolIntent.kind !== 'topic' ? toolIntent : promptIntent;
+  const answerTopic = answerIntent.topic || toolIntent.topic || query;
 
   if (results.length === 0) {
+    if (answerIntent.kind === 'blockers') {
+      return "I couldn't find any open commitments that are likely to block the upcoming release.";
+    }
+
+    if (answerIntent.kind === 'ownership') {
+      return `I couldn't find anyone working on ${answerTopic}.`;
+    }
+
     if (toolCalls.length > 1) {
       return null;
     }
@@ -433,21 +451,24 @@ function formatSearchCommitmentToolAnswer(toolCalls) {
     return `I couldn't find any commitments related to '${query}'.`;
   }
 
-  const lines = [`I found ${results.length} commitments related to ${query}:`, ''];
+  if (answerIntent.kind === 'ownership') {
+    return formatOwnershipAnswer(answerTopic, results);
+  }
+
+  if (answerIntent.kind === 'open' || answerIntent.kind === 'completed' || answerIntent.kind === 'overdue' || answerIntent.kind === 'today') {
+    return formatStatusAnswer(answerIntent.kind, results);
+  }
+
+  if (answerIntent.kind === 'blockers') {
+    return formatBlockerAnswer(results);
+  }
+
+  const topic = answerTopic;
+  const lines = [`I found ${results.length} commitments related to ${topic}:`, ''];
 
   results.forEach((result, index) => {
     const commitment = normalizeSearchResult(result);
-    const fields = [
-      `**Title:** ${formatSentenceSearchField(commitment.title)}`,
-      `**Status:** ${formatSearchStatus(commitment.status)}.`,
-    ];
-
-    appendOptionalSearchField(fields, 'Assignee', formatSearchAssignee(commitment.assignee));
-    fields.push(`**Created At:** ${formatSearchDate(commitment.createdAt)}.`);
-    fields.push(`**Updated At:** ${formatSearchDate(commitment.updatedAt)}.`);
-    appendOptionalSearchField(fields, 'GitHub Issue', formatSearchGithubIssue(commitment.githubIssue));
-
-    lines.push(`• ${fields.join(' ')}`);
+    lines.push(`• ${formatCommitmentMetadataLine(commitment)}`);
 
     if (index < results.length - 1) {
       lines.push('');
@@ -469,6 +490,133 @@ function findLastSearchCommitmentToolCall(toolCalls) {
   }
 
   return undefined;
+}
+
+/**
+ * @param {string} query
+ * @returns {{
+ *   kind: 'topic' | 'ownership' | 'open' | 'completed' | 'overdue' | 'today' | 'blockers',
+ *   topic: string,
+ * }}
+ */
+function getAnswerIntent(query) {
+  const normalized = normalizeAnswerQuery(query);
+  const topic = extractAnswerTopic(query);
+
+  if (isBlockerAnswerQuery(normalized)) {
+    return { kind: 'blockers', topic };
+  }
+
+  if (/\boverdue\b/.test(normalized)) {
+    return { kind: 'overdue', topic };
+  }
+
+  if (/\b(?:today|todays)\b/.test(normalized)) {
+    return { kind: 'today', topic };
+  }
+
+  if (/\bcompleted\b/.test(normalized)) {
+    return { kind: 'completed', topic };
+  }
+
+  if (/\bopen\b/.test(normalized)) {
+    return { kind: 'open', topic };
+  }
+
+  if (isOwnershipAnswerQuery(normalized)) {
+    return { kind: 'ownership', topic };
+  }
+
+  return { kind: 'topic', topic };
+}
+
+/**
+ * @param {string} normalizedQuery
+ * @returns {boolean}
+ */
+function isBlockerAnswerQuery(normalizedQuery) {
+  return /\b(?:blocking|blockers?|delaying|finished|remains?)\b/.test(normalizedQuery);
+}
+
+/**
+ * @param {string} normalizedQuery
+ * @returns {boolean}
+ */
+function isOwnershipAnswerQuery(normalizedQuery) {
+  return /\b(?:who\s+(?:owns?|is\s+(?:working\s+on|handling|doing|responsible\s+for)|s\s+(?:working\s+on|handling|doing))|whos\s+(?:working\s+on|handling|doing))\b/.test(
+    normalizedQuery,
+  );
+}
+
+/**
+ * @param {string} query
+ * @returns {string}
+ */
+function normalizeAnswerQuery(query) {
+  return query
+    .toLowerCase()
+    .replace(/\bwho['’]?s\b/g, 'whos')
+    .replace(/\btoday['’]?s\b/g, 'todays')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+/**
+ * @param {string} query
+ * @returns {string}
+ */
+function extractAnswerTopic(query) {
+  const words = query
+    .replace(/\bwho['’]?s\b/gi, 'whos')
+    .replace(/\btoday['’]?s\b/gi, 'todays')
+    .replace(/[^a-z0-9]+/gi, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(
+      (word) =>
+        word &&
+        ![
+          'a',
+          'about',
+          'an',
+          'and',
+          'any',
+          'anything',
+          'are',
+          'before',
+          'commitment',
+          'commitments',
+          'doing',
+          'find',
+          'for',
+          'handling',
+          'is',
+          'list',
+          'me',
+          'on',
+          'owns',
+          'please',
+          'responsible',
+          'related',
+          'search',
+          'show',
+          'the',
+          'this',
+          'to',
+          'need',
+          'needs',
+          's',
+          'still',
+          'what',
+          'who',
+          'whos',
+          'work',
+          'working',
+        ].includes(word.toLowerCase()),
+    );
+
+  return words.join(' ');
 }
 
 /**
@@ -521,6 +669,132 @@ function formatSentenceSearchField(value) {
   }
 
   return /[.!?]$/.test(formatted) ? formatted : `${formatted}.`;
+}
+
+/**
+ * @param {Record<string, unknown>} commitment
+ * @returns {string}
+ */
+function formatCommitmentMetadataLine(commitment) {
+  const fields = [
+    `**Title:** ${formatSentenceSearchField(commitment.title)}`,
+    `**Status:** ${formatSearchStatus(commitment.status)}.`,
+  ];
+
+  appendOptionalSearchField(fields, 'Assignee', formatSearchAssignee(commitment.assignee));
+  fields.push(`**Created At:** ${formatSearchDate(commitment.createdAt)}.`);
+  fields.push(`**Updated At:** ${formatSearchDate(commitment.updatedAt)}.`);
+  appendOptionalSearchField(fields, 'GitHub Issue', formatSearchGithubIssue(commitment.githubIssue));
+
+  return fields.join(' ');
+}
+
+/**
+ * @param {string} topic
+ * @param {unknown[]} results
+ * @returns {string}
+ */
+function formatOwnershipAnswer(topic, results) {
+  const groups = groupResultsByAssignee(results);
+  const lines = [`👥 Here's who is working on ${topic}:`, ''];
+  let groupIndex = 0;
+
+  for (const [assignee, commitments] of groups) {
+    lines.push(`• ${assignee}`);
+    commitments.forEach((commitment) => {
+      lines.push(`  - ${formatBareTitle(commitment.title)} (${formatPlainStatus(commitment.status)})`);
+    });
+
+    groupIndex += 1;
+    if (groupIndex < groups.size) {
+      lines.push('');
+    }
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * @param {'open' | 'completed' | 'overdue' | 'today'} kind
+ * @param {unknown[]} results
+ * @returns {string}
+ */
+function formatStatusAnswer(kind, results) {
+  const headings = {
+    open: 'Open commitments:',
+    completed: 'Completed commitments:',
+    overdue: 'Overdue commitments:',
+    today: "Today's commitments:",
+  };
+  const lines = [headings[kind], ''];
+
+  results.forEach((result, index) => {
+    lines.push(`• ${formatCommitmentMetadataLine(normalizeSearchResult(result))}`);
+
+    if (index < results.length - 1) {
+      lines.push('');
+    }
+  });
+
+  return lines.join('\n');
+}
+
+/**
+ * @param {unknown[]} results
+ * @returns {string}
+ */
+function formatBlockerAnswer(results) {
+  if (results.length === 0) {
+    return "I couldn't find any open commitments that are likely to block the upcoming release.";
+  }
+
+  const groups = groupResultsByAssignee(results);
+  const lines = ['Potential release blockers:', ''];
+  let count = 0;
+  let groupIndex = 0;
+
+  for (const [assignee, commitments] of groups) {
+    lines.push(assignee);
+    for (const commitment of commitments) {
+      lines.push(`  ${formatBareTitle(commitment.title)}`);
+      count += 1;
+    }
+
+    groupIndex += 1;
+    if (groupIndex < groups.size) {
+      lines.push('');
+    }
+  }
+
+  lines.push('', `${count} open ${count === 1 ? 'commitment may' : 'commitments may'} impact the next release.`);
+  return lines.join('\n');
+}
+
+/**
+ * @param {unknown[]} results
+ * @returns {Map<string, Array<Record<string, unknown>>>}
+ */
+function groupResultsByAssignee(results) {
+  const groups = new Map();
+
+  for (const result of results) {
+    const commitment = normalizeSearchResult(result);
+    const assignee = formatSearchAssignee(commitment.assignee) || 'Unassigned';
+    const existing = groups.get(assignee) ?? [];
+    existing.push(commitment);
+    groups.set(assignee, existing);
+  }
+
+  return groups;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function formatBareTitle(value) {
+  const formatted = formatSearchTitle(value);
+  return formatted.replace(/[.!?]+$/g, '');
 }
 
 /**
@@ -595,6 +869,10 @@ function formatSearchAssignee(value) {
     return '';
   }
 
+  if (/^(?:<@)?U(?:123|999)>?$/i.test(formatted)) {
+    return 'Unassigned';
+  }
+
   if (/^<@[^>]+>$/.test(formatted)) {
     return formatted;
   }
@@ -604,6 +882,15 @@ function formatSearchAssignee(value) {
   }
 
   return formatted;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function formatPlainStatus(value) {
+  const formatted = formatRequiredSearchField(value);
+  return formatted || 'Unknown';
 }
 
 /**

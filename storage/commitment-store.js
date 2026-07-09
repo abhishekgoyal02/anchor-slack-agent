@@ -191,6 +191,16 @@ export async function getAllOpenCommitments() {
 }
 
 /**
+ * Get all commitments.
+ * @returns {Promise<Commitment[]>}
+ */
+export async function getAllCommitments() {
+  await initPromise;
+  const rows = await all('SELECT * FROM commitments ORDER BY created_at ASC');
+  return /** @type {Commitment[]} */ (rows);
+}
+
+/**
  * Get all open commitments linked to GitHub issues.
  * @returns {Promise<Commitment[]>}
  */
