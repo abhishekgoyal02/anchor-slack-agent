@@ -82,6 +82,29 @@ describe('message listeners', () => {
     assert.strictEqual(sayCalls[0].blocks[0].text.text, `⚓ *Potential commitment detected*\n\n>${text}`);
     assert.strictEqual(sayCalls[0].blocks[1].elements[0].value, text);
   });
+
+  it('politely rejects unrelated general knowledge prompts before assistant streaming', async () => {
+    const sayCalls = [];
+
+    await handleMessage({
+      event: {
+        channel: 'D123',
+        channel_type: 'im',
+        text: 'What is API?',
+        ts: '1710000000.000400',
+      },
+      logger: createLogger(),
+      say: async (payload) => {
+        sayCalls.push(payload);
+      },
+      sayStream: failIfCalled('sayStream'),
+      setStatus: failIfCalled('setStatus'),
+    });
+
+    assert.strictEqual(sayCalls.length, 1);
+    assert.strictEqual(sayCalls[0].thread_ts, '1710000000.000400');
+    assert.match(sayCalls[0].text, /^[🐟🦈🐧🦢🐠🐬]/u);
+  });
 });
 
 function createLogger() {

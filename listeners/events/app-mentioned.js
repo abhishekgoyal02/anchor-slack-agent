@@ -1,7 +1,13 @@
 import { detectCommitment } from '../../services/commitment-detector.js';
 import { generateResponse } from '../../services/gemini-service.js';
 import { sessionStore } from '../../thread-context/index.js';
-import { postCommitmentCard, setThinkingStatus, streamAssistantResponse } from './conversation-response.js';
+import {
+  isOffDomainGeneralKnowledgePrompt,
+  postCommitmentCard,
+  postOffDomainResponse,
+  setThinkingStatus,
+  streamAssistantResponse,
+} from './conversation-response.js';
 
 /**
  * Handle app_mention events and generate a Gemini response.
@@ -25,6 +31,11 @@ export async function handleAppMentioned({ event, logger, say, sayStream, setSta
 
     if (detectCommitment(cleanedText)) {
       await postCommitmentCard(say, cleanedText, threadTs);
+      return;
+    }
+
+    if (isOffDomainGeneralKnowledgePrompt(cleanedText)) {
+      await postOffDomainResponse(say, threadTs);
       return;
     }
 

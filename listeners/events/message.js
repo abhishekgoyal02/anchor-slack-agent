@@ -1,7 +1,13 @@
 import { detectCommitment } from '../../services/commitment-detector.js';
 import { generateResponse } from '../../services/gemini-service.js';
 import { sessionStore } from '../../thread-context/index.js';
-import { postCommitmentCard, setThinkingStatus, streamAssistantResponse } from './conversation-response.js';
+import {
+  isOffDomainGeneralKnowledgePrompt,
+  postCommitmentCard,
+  postOffDomainResponse,
+  setThinkingStatus,
+  streamAssistantResponse,
+} from './conversation-response.js';
 
 /**
  * @param {import('@slack/types').MessageEvent} event
@@ -48,6 +54,11 @@ export async function handleMessage({ event, logger, say, sayStream, setStatus }
 
     if (detectCommitment(text)) {
       await postCommitmentCard(say, text, threadTs);
+      return;
+    }
+
+    if (isOffDomainGeneralKnowledgePrompt(text)) {
+      await postOffDomainResponse(say, threadTs);
       return;
     }
 
