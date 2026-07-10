@@ -27,12 +27,16 @@ const TEST_TEXT_PATTERNS = [
   /\bTest GitHub metadata\b.*\d{10,}/i,
   /\bLinked commitment\b\s+\d{10,}/i,
   /\bUnlinked commitment\b\s+\d{10,}/i,
+  /\bRelinked commitment\b/i,
   /\bCompletable commitment\b\s+\d{10,}/i,
   /\bAlready completed commitment\b\s+\d{10,}/i,
+  /\bDisabled GitHub sync\b\s+\d{10,}/i,
+  /\bProduction sync (?:eligible|quarantined)\b\s+\d{10,}/i,
   /\bOAuth migration completed\b\s+\d{10,}/i,
   /\bPayment gateway (?:linked |owner )?follow-up\b.*\d{10,}/i,
   /\bRaw auth commitment\b.*\d{10,}/i,
   /\bCustomer auth (?:linked|unlinked) work\b\s+\d{10,}/i,
+  /\b(?:temporary recovery|recovery row|migration placeholder|placeholder row)\b/i,
   /\bdummy\b/i,
   /\bsample row\b/i,
   /\bseed data\b/i,
@@ -79,6 +83,7 @@ const STOP_WORDS = new Set([
 
 const STATUS_QUERY_WORDS = new Set(['open', 'completed', 'overdue', 'today', 'todays']);
 const ACTIVE_STATUSES = new Set(['open', 'in progress', 'blocked']);
+const OVERDUE_STATUSES = new Set(['open', 'in progress']);
 const BLOCKER_KEYWORDS = new Set([
   'api',
   'auth',
@@ -296,7 +301,7 @@ function matchesIntent(commitment, intent) {
   }
 
   if (intent.kind === 'overdue') {
-    return isUnfinished(commitment) && isBeforeToday(commitment.due_date);
+    return isOverdue(commitment);
   }
 
   if (intent.kind === 'today') {
@@ -338,6 +343,14 @@ function isLikelyBlocker(commitment, terms) {
  */
 function isUnfinished(commitment) {
   return ACTIVE_STATUSES.has(normalizeStatus(commitment.status));
+}
+
+/**
+ * @param {import('../storage/commitment-store.js').Commitment} commitment
+ * @returns {boolean}
+ */
+function isOverdue(commitment) {
+  return OVERDUE_STATUSES.has(normalizeStatus(commitment.status)) && isBeforeToday(commitment.due_date);
 }
 
 /**

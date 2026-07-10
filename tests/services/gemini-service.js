@@ -208,7 +208,8 @@ describe('gemini-service', () => {
       );
       assert.match(generateContentCalls[0].config.systemInstruction, /format it as a mention: <@U123ABC45>/);
       assert.match(generateContentCalls[0].config.systemInstruction, /GitHub Issue: #12/);
-      assert.match(generateContentCalls[0].config.systemInstruction, /I couldn't find any commitments related to/);
+      assert.match(generateContentCalls[0].config.systemInstruction, /Nothing on \*\*<topic>\*\*/);
+      assert.match(generateContentCalls[0].config.systemInstruction, /No commitments found for \*\*<topic>\*\*/);
       assert.deepStrictEqual(generateContentCalls[1].contents.at(-1), {
         role: 'user',
         parts: [
@@ -227,6 +228,122 @@ describe('gemini-service', () => {
                   },
                 ],
               },
+            },
+          },
+        ],
+      });
+    });
+
+    it('preserves Gemini function call ids when returning MCP tool responses', async () => {
+      const generateContentCalls = [];
+      const mockClient = createSequentialGeminiClient(
+        [
+          { functionCalls: [{ id: 'call-search-1', name: 'search_commitments', args: { query: 'authentication' } }] },
+          { text: 'ignored because formatting is deterministic' },
+        ],
+        generateContentCalls,
+      );
+      const service = new GeminiService({ client: mockClient, model: 'mock-model' });
+
+      await service.generateTextWithTools('Search commitment related to Authentication.', {
+        mcpServer: createMockMcpServer({
+          handleToolRequest: async () => ({
+            ok: true,
+            result: [
+              {
+                title: 'Authentication cleanup',
+                status: 'Open',
+                assignee: 'Abhishek',
+                createdAt: '2026-07-07 09:00:00',
+                updatedAt: '2026-07-08 10:30:00',
+                githubIssue: '20',
+              },
+            ],
+          }),
+        }),
+      });
+
+      assert.deepStrictEqual(generateContentCalls[1].contents.at(-1), {
+        role: 'user',
+        parts: [
+          {
+            functionResponse: {
+              id: 'call-search-1',
+              name: 'search_commitments',
+              response: {
+                output: [
+                  {
+                    title: 'Authentication cleanup',
+                    status: 'Open',
+                    assignee: 'Abhishek',
+                    createdAt: '2026-07-07 09:00:00',
+                    updatedAt: '2026-07-08 10:30:00',
+                    githubIssue: '20',
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      });
+    });
+
+    it('preserves Gemini function call thought signatures in the model turn', async () => {
+      const generateContentCalls = [];
+      const mockClient = createSequentialGeminiClient(
+        [
+          {
+            candidates: [
+              {
+                content: {
+                  parts: [
+                    {
+                      thoughtSignature: 'thought-signature-1',
+                      functionCall: {
+                        id: 'call-search-1',
+                        name: 'search_commitments',
+                        args: { query: 'authentication' },
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+            functionCalls: [{ id: 'call-search-1', name: 'search_commitments', args: { query: 'authentication' } }],
+          },
+          { text: 'ignored because formatting is deterministic' },
+        ],
+        generateContentCalls,
+      );
+      const service = new GeminiService({ client: mockClient, model: 'mock-model' });
+
+      await service.generateTextWithTools('Search commitment related to authentication', {
+        mcpServer: createMockMcpServer({
+          handleToolRequest: async () => ({
+            ok: true,
+            result: [
+              {
+                title: 'Authentication cleanup',
+                status: 'Open',
+                assignee: 'Abhishek',
+                createdAt: '2026-07-07 09:00:00',
+                updatedAt: '2026-07-08 10:30:00',
+                githubIssue: '20',
+              },
+            ],
+          }),
+        }),
+      });
+
+      assert.deepStrictEqual(generateContentCalls[1].contents.at(-2), {
+        role: 'model',
+        parts: [
+          {
+            thoughtSignature: 'thought-signature-1',
+            functionCall: {
+              id: 'call-search-1',
+              name: 'search_commitments',
+              args: { query: 'authentication' },
             },
           },
         ],
@@ -325,6 +442,45 @@ describe('gemini-service', () => {
           "• **Title:** I'll finish the login API by Friday. **Status:** 🟡 Open. **Assignee:** <@U0ABCDE123>. **Created At:** 2026-07-01. **Updated At:** 2026-07-01. **GitHub Issue:** #13.",
         ].join('\n'),
       );
+    });
+
+    it('uses only approved randomized empty topic search messages', async () => {
+      const originalRandom = Math.random;
+
+      try {
+        Math.random = () => 0;
+        const firstService = new GeminiService({
+          client: createSequentialGeminiClient([
+            { functionCalls: [{ name: 'search_commitments', args: { query: 'AWS' } }] },
+            { text: 'ignored because formatting is deterministic' },
+          ]),
+          model: 'mock-model',
+        });
+        const first = await firstService.generateTextWithTools('Search commitments related to AWS', {
+          mcpServer: createMockMcpServer({
+            handleToolRequest: async () => ({ ok: true, result: [] }),
+          }),
+        });
+
+        Math.random = () => 0.99;
+        const secondService = new GeminiService({
+          client: createSequentialGeminiClient([
+            { functionCalls: [{ name: 'search_commitments', args: { query: 'AWS' } }] },
+            { text: 'ignored because formatting is deterministic' },
+          ]),
+          model: 'mock-model',
+        });
+        const second = await secondService.generateTextWithTools('Search commitments related to AWS', {
+          mcpServer: createMockMcpServer({
+            handleToolRequest: async () => ({ ok: true, result: [] }),
+          }),
+        });
+
+        assert.strictEqual(first.text, '🐿 Nothing on **AWS** right now. Looks like nobody has picked it up yet.');
+        assert.strictEqual(second.text, "🐧 No commitments found for **AWS**. Guess this one's still waiting for its first owner.");
+      } finally {
+        Math.random = originalRandom;
+      }
     });
 
     it('does not render Context Snapshot fields in Ask Anchor search results', async () => {
@@ -535,6 +691,123 @@ describe('gemini-service', () => {
       assert.match(response.text, /\*\*Title:\*\*/);
       assert.match(response.text, /\*\*GitHub Issue:\*\*/);
       assert.doesNotMatch(response.text, /👥 Here's who is working on/);
+    });
+
+    it('answers the production Authentication search phrase without falling back to a generic error', async () => {
+      const mockClient = createSequentialGeminiClient([
+        { functionCalls: [{ id: 'auth-call', name: 'search_commitments', args: { query: 'Authentication' } }] },
+        { text: 'ignored because formatting is deterministic' },
+      ]);
+      const service = new GeminiService({ client: mockClient, model: 'mock-model' });
+
+      const response = await service.generateTextWithTools('Search commitment related to Authentication.', {
+        mcpServer: createMockMcpServer({
+          handleToolRequest: async () => ({
+            ok: true,
+            result: [
+              {
+                title: 'Authentication rollout',
+                status: 'Open',
+                assignee: 'Abhishek',
+                createdAt: '2026-07-07 09:00:00',
+                updatedAt: '2026-07-08 10:30:00',
+                githubIssue: '20',
+              },
+            ],
+          }),
+        }),
+      });
+
+      assert.match(response.text, /^I found 1 commitments related to Authentication:/);
+      assert.match(response.text, /\*\*Title:\*\* Authentication rollout\./);
+      assert.doesNotMatch(response.text, /Something went wrong|Context Snapshot|Requirements|Summary/);
+    });
+
+    it('answers the incident commitment-query phrases without generic fallback text', async () => {
+      const cases = [
+        {
+          prompt: 'show open commitments',
+          toolQuery: 'show open commitments',
+          result: {
+            title: 'Open authentication cleanup',
+            status: 'Open',
+            assignee: 'Abhishek',
+            createdAt: '2026-07-07 09:00:00',
+            updatedAt: '2026-07-08 10:30:00',
+            githubIssue: '20',
+          },
+          expected: /^Open commitments:\n\n• \*\*Title:\*\* Open authentication cleanup\./,
+        },
+        {
+          prompt: 'search commitment related to API',
+          toolQuery: 'API',
+          result: {
+            title: 'API migration',
+            status: 'Open',
+            assignee: 'Abhishek',
+            createdAt: '2026-07-07 09:00:00',
+            updatedAt: '2026-07-08 10:30:00',
+            githubIssue: '21',
+          },
+          expected: /^I found 1 commitments related to API:\n\n• \*\*Title:\*\* API migration\./,
+        },
+        {
+          prompt: 'search commitment related to authentication',
+          toolQuery: 'authentication',
+          result: {
+            title: 'Authentication rollout',
+            status: 'Open',
+            assignee: 'Abhishek',
+            createdAt: '2026-07-07 09:00:00',
+            updatedAt: '2026-07-08 10:30:00',
+            githubIssue: '22',
+          },
+          expected: /^I found 1 commitments related to authentication:\n\n• \*\*Title:\*\* Authentication rollout\./,
+        },
+        {
+          prompt: 'who is working on authentication?',
+          toolQuery: 'authentication',
+          result: {
+            title: 'Authentication hardening',
+            status: 'Open',
+            assignee: 'Abhishek',
+            createdAt: '2026-07-07 09:00:00',
+            updatedAt: '2026-07-08 10:30:00',
+            githubIssue: '23',
+          },
+          expected: /^👥 Here's who is working on authentication:\n\n• Abhishek\n  - Authentication hardening \(Open\)$/,
+        },
+      ];
+
+      for (const testCase of cases) {
+        const service = new GeminiService({
+          client: createSequentialGeminiClient([
+            {
+              functionCalls: [
+                {
+                  id: `${testCase.toolQuery.replace(/\s+/g, '-').toLowerCase()}-call`,
+                  name: 'search_commitments',
+                  args: { query: testCase.toolQuery },
+                },
+              ],
+            },
+            { text: 'ignored because formatting is deterministic' },
+          ]),
+          model: 'mock-model',
+        });
+
+        const response = await service.generateTextWithTools(testCase.prompt, {
+          mcpServer: createMockMcpServer({
+            handleToolRequest: async () => ({
+              ok: true,
+              result: [testCase.result],
+            }),
+          }),
+        });
+
+        assert.match(response.text, testCase.expected);
+        assert.doesNotMatch(response.text, /Something went wrong|Context Snapshot|Requirements|Summary/);
+      }
     });
 
     it('keeps Search API and Search login in metadata-line UX with separate topics', async () => {
@@ -798,7 +1071,28 @@ describe('gemini-service', () => {
       assert.match(completed.text, /^Completed commitments:\n\n• \*\*Title:\*\*/);
       assert.match(overdue.text, /^Overdue commitments:\n\n• \*\*Title:\*\*/);
       assert.match(today.text, /^Today's commitments:\n\n• \*\*Title:\*\*/);
+      assert.doesNotMatch(overdue.text, /related to overdue/);
       assert.doesNotMatch([completed.text, overdue.text, today.text].join('\n'), /👥 Here's who is working on/);
+    });
+
+    it('returns the overdue empty-state instead of topic-search empty UX', async () => {
+      const service = new GeminiService({
+        client: createSequentialGeminiClient([
+          { functionCalls: [{ name: 'search_commitments', args: { query: 'Show overdue work' } }] },
+          { text: 'ignored because formatting is deterministic' },
+        ]),
+        model: 'mock-model',
+      });
+
+      const response = await service.generateTextWithTools('Show overdue work', {
+        mcpServer: createMockMcpServer({
+          handleToolRequest: async () => ({ ok: true, result: [] }),
+        }),
+      });
+
+      assert.strictEqual(response.text, "🦊 Good news — there isn't any overdue work right now.");
+      assert.doesNotMatch(response.text, /related to overdue/i);
+      assert.doesNotMatch(response.text, /Nothing on|No commitments found/);
     });
 
     it('formats release blocker answers without metadata dumps', async () => {
@@ -1099,7 +1393,7 @@ function restoreEnv(name, value) {
 }
 
 /**
- * @param {Array<{ text?: string, functionCalls?: Array<{ name?: string, args?: Record<string, unknown> }> }>} responses
+ * @param {Array<{ text?: string, candidates?: Array<Record<string, unknown>>, functionCalls?: Array<{ id?: string, name?: string, args?: Record<string, unknown> }> }>} responses
  * @param {Array<Record<string, unknown>>} [calls]
  * @returns {any}
  */

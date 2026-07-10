@@ -5,6 +5,10 @@ import { silentMcpLogger } from '../mcp/logger.js';
 
 const DEFAULT_MODEL = 'gemini-2.5-flash';
 const DEFAULT_MAX_TOOL_ITERATIONS = 5;
+const EMPTY_TOPIC_SEARCH_MESSAGES = [
+  (topic) => `🐿 Nothing on **${topic}** right now. Looks like nobody has picked it up yet.`,
+  (topic) => `🐧 No commitments found for **${topic}**. Guess this one's still waiting for its first owner.`,
+];
 const DEFAULT_TOOL_CALLING_SYSTEM_INSTRUCTION = [
   'Format search_commitments answers as plain text only.',
   'Choose the Ask Anchor answer style from the user query before writing the answer.',
@@ -23,7 +27,7 @@ const DEFAULT_TOOL_CALLING_SYSTEM_INSTRUCTION = [
   'For ownership style, group results by assignee and do not include Created At, Updated At, or GitHub Issue.',
   'Never expose Context Snapshot fields such as Summary, Requirements, Need to, Dependencies, Risk, Complexity, Labels, or Due Date.',
   'Never output internal fields such as channel, thread, or database IDs.',
-  "If there are no results, reply naturally: I couldn't find any commitments related to '<query>'.",
+  'If a topic search has no results, use exactly one of these empty-state messages with the topic inserted: 🐿 Nothing on **<topic>** right now. Looks like nobody has picked it up yet. OR 🐧 No commitments found for **<topic>**. Guess this one\'s still waiting for its first owner.',
 ].join(' ');
 
 /**
@@ -242,13 +246,14 @@ export class GeminiService {
 
         contents.push({
           role: 'model',
-          parts: functionCalls.map((functionCall) => ({ functionCall })),
+          parts: getFunctionCallParts(response, functionCalls),
         });
 
         const functionResponseParts = [];
 
         for (const functionCall of functionCalls) {
           const toolName = functionCall.name;
+          const toolCallId = typeof functionCall.id === 'string' ? functionCall.id : undefined;
           const args = normalizeFunctionArgs(functionCall.args);
 
           if (!toolName) {
@@ -288,6 +293,7 @@ export class GeminiService {
           });
           functionResponseParts.push({
             functionResponse: {
+              ...(toolCallId ? { id: toolCallId } : {}),
               name: toolName,
               response: toolResponse.ok ? { output: toolResponse.result } : { error: toolResponse.error },
             },
@@ -394,6 +400,33 @@ function getFunctionCalls(response) {
 }
 
 /**
+ * Preserve the original SDK function-call parts so required metadata such as
+ * thought signatures survives the second Gemini request.
+ * @param {unknown} response
+ * @param {Array<{ name?: string, args?: unknown }>} functionCalls
+ * @returns {Array<Record<string, unknown>>}
+ */
+function getFunctionCallParts(response, functionCalls) {
+  const parts = response?.candidates?.[0]?.content?.parts;
+  if (Array.isArray(parts)) {
+    const functionCallParts = parts.filter((part) => part?.functionCall);
+    if (functionCallParts.length > 0) {
+      return functionCallParts.map(toJsonObject);
+    }
+  }
+
+  return functionCalls.map((functionCall) => ({ functionCall }));
+}
+
+/**
+ * @param {unknown} value
+ * @returns {Record<string, unknown>}
+ */
+function toJsonObject(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+/**
  * @param {unknown} args
  * @returns {Record<string, unknown>}
  */
@@ -444,11 +477,15 @@ function formatSearchCommitmentToolAnswer(toolCalls, prompt) {
       return `I couldn't find anyone working on ${answerTopic}.`;
     }
 
+    if (answerIntent.kind === 'overdue') {
+      return "🦊 Good news — there isn't any overdue work right now.";
+    }
+
     if (toolCalls.length > 1) {
       return null;
     }
 
-    return `I couldn't find any commitments related to '${query}'.`;
+    return formatEmptyTopicSearchAnswer(answerTopic || query);
   }
 
   if (answerIntent.kind === 'ownership') {
@@ -490,6 +527,16 @@ function findLastSearchCommitmentToolCall(toolCalls) {
   }
 
   return undefined;
+}
+
+/**
+ * @param {string} topic
+ * @returns {string}
+ */
+function formatEmptyTopicSearchAnswer(topic) {
+  const normalizedTopic = topic.trim() || 'that';
+  const index = Math.random() < 0.5 ? 0 : 1;
+  return EMPTY_TOPIC_SEARCH_MESSAGES[index](normalizedTopic);
 }
 
 /**

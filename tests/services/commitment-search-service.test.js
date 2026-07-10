@@ -186,6 +186,29 @@ describe('commitment-search-service', () => {
     assert.strictEqual(results[0].title, "I'll finish the commitment review by Monday");
   });
 
+  it('filters out relinked, placeholder, recovery, and sync test rows', async () => {
+    const results = await searchCommitments(
+      { query: 'commitment' },
+      {
+        store: {
+          findCommitmentsByText: async () => [
+            buildRow({ id: 1, text: 'Relinked commitment 1783587927742' }),
+            buildRow({ id: 2, text: 'Disabled GitHub sync 1783587927780' }),
+            buildRow({ id: 3, text: 'Production sync quarantined 1783587927914' }),
+            buildRow({ id: 4, text: 'Migration placeholder commitment 1783587927980' }),
+            buildRow({ id: 5, text: 'Temporary recovery row 1783587928000' }),
+            buildRow({ id: 6, text: "I'll document the recovery commitment by Monday", user_id: 'workspace-user' }),
+          ],
+        },
+      },
+    );
+
+    assert.deepStrictEqual(
+      results.map((result) => result.title),
+      ["I'll document the recovery commitment by Monday"],
+    );
+  });
+
   it('preserves real commitments with similar keywords', async () => {
     const results = await searchCommitments(
       { query: 'API' },
@@ -351,6 +374,7 @@ describe('commitment-search-service', () => {
       getAllCommitments: async () => [
         buildRow({ id: 1, text: 'Overdue deployment checklist', due_date: `${yesterday} 00:00:00` }),
         buildRow({ id: 2, text: 'Completed overdue OAuth work', status: 'completed', due_date: `${yesterday} 00:00:00` }),
+        buildRow({ id: 4, text: 'Blocked overdue deployment work', status: 'blocked', due_date: `${yesterday} 00:00:00` }),
         buildRow({ id: 3, text: 'Today API review', created_at: `${today} 09:00:00` }),
       ],
     };
@@ -366,6 +390,40 @@ describe('commitment-search-service', () => {
       todayResults.map((result) => result.title),
       ['Today API review'],
     );
+  });
+
+  it('treats overdue query variants as status queries instead of topic searches', async () => {
+    const now = new Date();
+    const yesterday = new Date(now.getTime() - 86_400_000).toISOString().slice(0, 10);
+    let textSearchCalls = 0;
+    const store = {
+      findCommitmentsByText: async () => {
+        textSearchCalls += 1;
+        throw new Error('overdue queries should not use topic search');
+      },
+      getAllCommitments: async () => [
+        buildRow({ id: 1, text: 'Overdue API work', status: 'open', due_date: `${yesterday} 00:00:00` }),
+        buildRow({ id: 2, text: 'Overdue authentication work', status: 'in_progress', due_date: `${yesterday} 00:00:00` }),
+        buildRow({ id: 3, text: 'Blocked overdue work', status: 'blocked', due_date: `${yesterday} 00:00:00` }),
+        buildRow({ id: 4, text: 'Completed overdue work', status: 'completed', due_date: `${yesterday} 00:00:00` }),
+      ],
+    };
+
+    for (const query of [
+      'Show overdue work',
+      'Show overdue commitments',
+      'Any overdue tasks?',
+      'Whats overdue?',
+      'List overdue work',
+    ]) {
+      const results = await searchCommitments({ query }, { store });
+      assert.deepStrictEqual(
+        results.map((result) => result.title),
+        ['Overdue API work', 'Overdue authentication work'],
+      );
+    }
+
+    assert.strictEqual(textSearchCalls, 0);
   });
 
   it('derives release blockers from unfinished relevant commitments only', async () => {
@@ -416,6 +474,11 @@ describe('isTestFixture', () => {
       isTestFixture(buildRow({ text: 'Payment gateway owner follow-up open-filter-1783587905501' })),
       true,
     );
+  });
+
+  it('flags relinked and placeholder test text', () => {
+    assert.strictEqual(isTestFixture(buildRow({ text: 'Relinked commitment 1783587927742' })), true);
+    assert.strictEqual(isTestFixture(buildRow({ text: 'Migration placeholder commitment 1783587927742' })), true);
   });
 
   it('does not flag real commitment text', () => {

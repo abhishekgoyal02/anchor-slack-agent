@@ -3,8 +3,10 @@ import { describe, it } from 'node:test';
 
 import {
   getCommitmentById,
+  getGithubSyncEligibleCommitments,
   getOpenCommitmentsWithGithubIssues,
   markCommitmentCompleted,
+  recordGithubSyncFailure,
   saveCommitment,
   updateCommitmentGithubMetadata,
 } from '../../storage/commitment-store.js';
@@ -52,6 +54,35 @@ describe('commitment-store', () => {
     assert.strictEqual(updated, false);
   });
 
+  it('clears GitHub sync quarantine when GitHub metadata is refreshed', async () => {
+    const id = await saveCommitment({
+      text: `Relinked commitment ${Date.now()}`,
+      userId: 'U024REALUSER',
+      channelId: 'C123',
+      threadTs: `T-relinked-${Date.now()}`,
+      messageTs: `M-relinked-${Date.now()}`,
+    });
+    await updateCommitmentGithubMetadata(id, {
+      issueNumber: 12,
+      issueUrl: 'https://github.com/owner/repo/issues/12',
+    });
+    const failure = await recordGithubSyncFailure(id, { reason: 'github_status_404', maxFailures: 1 });
+
+    assert.strictEqual(failure.quarantined, true);
+
+    await updateCommitmentGithubMetadata(id, {
+      issueNumber: 13,
+      issueUrl: 'https://github.com/owner/repo/issues/13',
+    });
+    const commitment = await getCommitmentById(id);
+
+    assert.strictEqual(commitment.github_issue_number, 13);
+    assert.strictEqual(commitment.github_issue_url, 'https://github.com/owner/repo/issues/13');
+    assert.strictEqual(commitment.github_sync_failure_count, 0);
+    assert.strictEqual(commitment.github_sync_quarantined_at, null);
+    assert.strictEqual(commitment.github_sync_quarantine_reason, null);
+  });
+
   it('loads only open commitments linked to GitHub issues', async () => {
     const linkedThreadTs = `T-linked-${Date.now()}`;
     const unlinkedThreadTs = `T-unlinked-${Date.now()}`;
@@ -78,6 +109,63 @@ describe('commitment-store', () => {
 
     assert.ok(linkedCommitments.some((commitment) => commitment.id === linkedId));
     assert.ok(linkedCommitments.every((commitment) => commitment.github_issue_number !== null));
+  });
+
+  it('loads only GitHub sync eligible production commitments', async () => {
+    const suffix = Date.now();
+    const eligibleId = await saveCommitment({
+      text: `Production sync eligible ${suffix}`,
+      userId: 'U024REALUSER',
+      channelId: 'C123',
+      threadTs: `T-sync-eligible-${suffix}`,
+      messageTs: `M-sync-eligible-${suffix}`,
+    });
+    const fixtureId = await saveCommitment({
+      text: `fixture-filter-${suffix}`,
+      userId: 'U024REALUSER',
+      channelId: 'C123',
+      threadTs: `T-sync-fixture-${suffix}`,
+      messageTs: `M-sync-fixture-${suffix}`,
+    });
+    const quarantinedId = await saveCommitment({
+      text: `Production sync quarantined ${suffix}`,
+      userId: 'U024REALUSER',
+      channelId: 'C123',
+      threadTs: `T-sync-quarantined-${suffix}`,
+      messageTs: `M-sync-quarantined-${suffix}`,
+    });
+    const duplicateId = await saveCommitment({
+      text: `Production sync eligible ${suffix}`,
+      userId: 'U024REALUSER',
+      channelId: 'C123',
+      threadTs: `T-sync-duplicate-${suffix}`,
+      messageTs: `M-sync-duplicate-${suffix}`,
+    });
+
+    await updateCommitmentGithubMetadata(eligibleId, {
+      issueNumber: 301,
+      issueUrl: 'https://github.com/owner/repo/issues/301',
+    });
+    await updateCommitmentGithubMetadata(fixtureId, {
+      issueNumber: 302,
+      issueUrl: 'https://github.com/owner/repo/issues/302',
+    });
+    await updateCommitmentGithubMetadata(quarantinedId, {
+      issueNumber: 303,
+      issueUrl: 'https://github.com/owner/repo/issues/303',
+    });
+    await updateCommitmentGithubMetadata(duplicateId, {
+      issueNumber: 301,
+      issueUrl: 'https://github.com/owner/repo/issues/301',
+    });
+    await recordGithubSyncFailure(quarantinedId, { reason: 'github_status_404', maxFailures: 1 });
+
+    const ids = (await getGithubSyncEligibleCommitments()).map((commitment) => commitment.id);
+
+    assert.ok(ids.includes(eligibleId));
+    assert.ok(!ids.includes(fixtureId));
+    assert.ok(!ids.includes(quarantinedId));
+    assert.ok(!ids.includes(duplicateId));
   });
 
   it('marks a commitment completed with completed_at', async () => {
