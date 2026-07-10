@@ -30,7 +30,7 @@ export async function handleAppMentioned({ event, logger, say, sayStream, setSta
     }
 
     if (detectCommitment(cleanedText)) {
-      await postCommitmentCard(say, cleanedText, threadTs);
+      await postCommitmentCard(say, cleanedText, threadTs, logger);
       return;
     }
 

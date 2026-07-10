@@ -1,15 +1,26 @@
 /**
  * Build a commitment confirmation card.
  * @param {string} messageText
+ * @param {import('../../services/reality-check-service.js').RealityCheckAnalysis} realityCheck
  * @returns {import('@slack/types').KnownBlock[]}
  */
-export function buildCommitmentCard(messageText) {
+export function buildCommitmentCard(_messageText, realityCheck) {
+  const safeRealityCheck = normalizeRealityCheck(realityCheck);
+  const text = [
+    '⚓ *Potential commitment detected*',
+    safeRealityCheck.title,
+    `>${safeRealityCheck.originalText}`,
+    `Due: ${safeRealityCheck.dueDateLabel}  ${safeRealityCheck.analysisText}`,
+    safeRealityCheck.recommendationText,
+    safeRealityCheck.microcopy,
+  ].join('\n');
+
   return [
     {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `⚓ *Potential commitment detected*\n\n>${messageText}`,
+        text,
       },
     },
     {
@@ -19,24 +30,76 @@ export function buildCommitmentCard(messageText) {
           type: 'button',
           text: {
             type: 'plain_text',
-            text: 'Confirm',
+            text: safeRealityCheck.primaryButtonLabel,
           },
           style: 'primary',
           action_id: 'commitment_confirm',
-          value: messageText,
+          value: safeRealityCheck.primaryValue,
         },
         {
           type: 'button',
           text: {
             type: 'plain_text',
-            text: 'Ignore',
+            text: safeRealityCheck.secondaryButtonLabel,
           },
-          action_id: 'commitment_ignore',
-          value: messageText,
+          action_id: 'commitment_confirm_recommended',
+          value: safeRealityCheck.secondaryValue,
         },
       ],
     },
   ];
+}
+
+/**
+ * Keep Slack block construction total even if Reality Check returns malformed data.
+ * @param {Partial<import('../../services/reality-check-service.js').RealityCheckAnalysis> | null | undefined} realityCheck
+ * @returns {import('../../services/reality-check-service.js').RealityCheckAnalysis}
+ */
+function normalizeRealityCheck(realityCheck) {
+  return {
+    title: normalizeCardText(realityCheck?.title, 'Commitment detected.'),
+    originalText: normalizeCardText(realityCheck?.originalText, realityCheck?.primaryValue || 'Commitment detected.'),
+    dueDateLabel: normalizeCardText(realityCheck?.dueDateLabel, 'the stated date'),
+    predictedCompletionLabel: normalizeCardText(realityCheck?.predictedCompletionLabel, 'the stated date'),
+    similarCount: Number.isFinite(realityCheck?.similarCount) ? Number(realityCheck?.similarCount) : 0,
+    analysisText: normalizeCardText(
+      realityCheck?.analysisText,
+      'Based on similar task patterns, this looks reasonable.',
+    ),
+    recommendationText: normalizeCardText(realityCheck?.recommendationText, 'This looks very realistic.'),
+    microcopy: normalizeCardText(realityCheck?.microcopy, '🐧 Low-key this timeline looks solid.'),
+    primaryButtonLabel: normalizeButtonText(realityCheck?.primaryButtonLabel, 'Keep Date'),
+    secondaryButtonLabel: normalizeButtonText(realityCheck?.secondaryButtonLabel, 'Proceed Anyway'),
+    primaryValue: normalizeButtonValue(realityCheck?.primaryValue),
+    secondaryValue: normalizeButtonValue(realityCheck?.secondaryValue || realityCheck?.primaryValue),
+  };
+}
+
+/**
+ * @param {unknown} value
+ * @param {string} fallback
+ * @returns {string}
+ */
+function normalizeCardText(value, fallback) {
+  const text = typeof value === 'string' ? value.trim() : '';
+  return text || String(fallback || '');
+}
+
+/**
+ * @param {unknown} value
+ * @param {string} fallback
+ * @returns {string}
+ */
+function normalizeButtonText(value, fallback) {
+  return normalizeCardText(value, fallback).slice(0, 75);
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function normalizeButtonValue(value) {
+  return normalizeCardText(value, 'Commitment detected.').slice(0, 2000);
 }
 
 /**

@@ -9,5 +9,6 @@ import { handleFeedbackButton } from './feedback-buttons.js';
 export function register(app) {
   app.action('feedback', handleFeedbackButton);
   app.action('commitment_confirm', handleCommitmentConfirm);
+  app.action('commitment_confirm_recommended', handleCommitmentConfirm);
   app.action('commitment_ignore', handleCommitmentIgnore);
 }

@@ -1,3 +1,4 @@
+import { analyzeRealityCheck, createFallbackRealityCheck } from '../../services/reality-check-service.js';
 import { buildCommitmentCard } from '../views/commitment-card.js';
 import { buildFeedbackBlocks } from '../views/feedback-builder.js';
 
@@ -56,14 +57,37 @@ export async function setThinkingStatus(setStatus, logger) {
  * @param {Function} say
  * @param {string} text
  * @param {string} threadTs
+ * @param {import('../../mcp/logger.js').McpLogger} [logger]
  * @returns {Promise<void>}
  */
-export async function postCommitmentCard(say, text, threadTs) {
-  await say({
-    blocks: buildCommitmentCard(text),
-    text: `⚓ Potential commitment detected: "${text}"`,
-    thread_ts: threadTs,
-  });
+export async function postCommitmentCard(say, text, threadTs, logger) {
+  const blocks = await buildCommitmentBlocksSafely(text, logger);
+
+  try {
+    await say({
+      blocks,
+      text: `⚓ Potential commitment detected: "${text}"`,
+      thread_ts: threadTs,
+    });
+  } catch (error) {
+    logger?.error?.('Failed to post commitment card', serializeError(error));
+    throw error;
+  }
+}
+
+/**
+ * @param {string} text
+ * @param {import('../../mcp/logger.js').McpLogger} [logger]
+ * @returns {Promise<import('@slack/types').KnownBlock[]>}
+ */
+async function buildCommitmentBlocksSafely(text, logger) {
+  try {
+    const realityCheck = await analyzeRealityCheck(text);
+    return buildCommitmentCard(text, realityCheck);
+  } catch (error) {
+    logger?.error?.('Reality Check card generation failed; using fallback commitment card', serializeError(error));
+    return buildCommitmentCard(text, createFallbackRealityCheck(text));
+  }
 }
 
 /**

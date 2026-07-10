@@ -53,7 +53,7 @@ export async function handleMessage({ event, logger, say, sayStream, setStatus }
     const threadTs = event.thread_ts || event.ts;
 
     if (detectCommitment(text)) {
-      await postCommitmentCard(say, text, threadTs);
+      await postCommitmentCard(say, text, threadTs, logger);
       return;
     }
 
