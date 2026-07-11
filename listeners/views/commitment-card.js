@@ -1,3 +1,5 @@
+import { getRandomRealityCheckMicrocopy, REALITY_CHECK_MICROCOPY } from '../../services/reality-check-service.js';
+
 /**
  * Build a commitment confirmation card.
  * @param {string} messageText
@@ -8,9 +10,8 @@ export function buildCommitmentCard(_messageText, realityCheck) {
   const safeRealityCheck = normalizeRealityCheck(realityCheck);
   const text = [
     '⚓ *Potential commitment detected*',
-    safeRealityCheck.title,
     `>${safeRealityCheck.originalText}`,
-    `Due: ${safeRealityCheck.dueDateLabel}  ${safeRealityCheck.analysisText}`,
+    `Due: ${safeRealityCheck.dueDateLabel} • ${safeRealityCheck.analysisText}`,
     safeRealityCheck.recommendationText,
     safeRealityCheck.microcopy,
   ].join('\n');
@@ -67,7 +68,7 @@ function normalizeRealityCheck(realityCheck) {
       'Based on similar task patterns, this looks reasonable.',
     ),
     recommendationText: normalizeCardText(realityCheck?.recommendationText, 'This looks very realistic.'),
-    microcopy: normalizeCardText(realityCheck?.microcopy, '🐧 Low-key this timeline looks solid.'),
+    microcopy: normalizeMicrocopy(realityCheck?.microcopy),
     primaryButtonLabel: normalizeButtonText(realityCheck?.primaryButtonLabel, 'Keep Date'),
     secondaryButtonLabel: normalizeButtonText(realityCheck?.secondaryButtonLabel, 'Proceed Anyway'),
     primaryValue: normalizeButtonValue(realityCheck?.primaryValue),
@@ -92,6 +93,27 @@ function normalizeCardText(value, fallback) {
  */
 function normalizeButtonText(value, fallback) {
   return normalizeCardText(value, fallback).slice(0, 75);
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function normalizeMicrocopy(value) {
+  const text = normalizeCardText(value, '');
+  if (REALITY_CHECK_MICROCOPY.includes(text) && countEmoji(text) === 1) {
+    return text;
+  }
+
+  return getRandomRealityCheckMicrocopy();
+}
+
+/**
+ * @param {string} text
+ * @returns {number}
+ */
+function countEmoji(text) {
+  return [...text.matchAll(/\p{Emoji_Presentation}/gu)].length;
 }
 
 /**

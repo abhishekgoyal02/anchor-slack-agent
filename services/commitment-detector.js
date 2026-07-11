@@ -76,12 +76,24 @@ const STARTER_ACTION_PATTERNS = [
   new RegExp(`\\b(?:i|we)(?:'ll| will)\\s+(${ACTION_PATTERN})\\b`, 'i'),
   new RegExp(`\\b(?:i|we)(?:'ll| will)\\s+try\\s+to\\s+(${ACTION_PATTERN})\\b`, 'i'),
   new RegExp(`\\b(?:i|we)(?:'m| am|'re| are)\\s+going\\s+to\\s+(${ACTION_PATTERN})\\b`, 'i'),
+  new RegExp(`\\b(?:my|our)\\s+plan\\s+is\\s+to\\s+(${ACTION_PATTERN})\\b`, 'i'),
   new RegExp(`\\blet me\\s+(${ACTION_PATTERN})\\b`, 'i'),
   new RegExp(`\\bi can\\s+(${ACTION_PATTERN})\\b`, 'i'),
+  /\b(?:i|we)\s+(?:can|will)\s+(?:take|own|handle)\b/i,
   new RegExp(`\\bwe\\s+(?:should|need\\s+to|must)\\s+(${ACTION_PATTERN})\\b`, 'i'),
   new RegExp(`\\bneed\\s+to\\s+(${ACTION_PATTERN})\\b`, 'i'),
   new RegExp(`\\bmust\\s+(${ACTION_PATTERN})\\b`, 'i'),
   new RegExp(`\\blet's\\s+(${ACTION_PATTERN})\\b`, 'i'),
+];
+
+const GERUND_ACTION_PATTERN =
+  'taking\\s+care\\s+of|working\\s+on|fixing|finishing|completing|providing|sending|sharing|uploading|reviewing|preparing|writing|migrating|deploying|pushing|merging|creating|implementing|updating|delivering|investigating|messaging|contacting|scheduling|publishing|submitting|configuring|documenting|refactoring|testing|drafting|patching|shipping|handling|taking|owning|following\\s+up|booking|confirming|checking|researching|looking\\s+into|syncing|opening|closing|verifying|adding|removing|changing|cleaning\\s+up|debugging|emailing|calling';
+
+const NATURAL_OWNERSHIP_PATTERNS = [
+  new RegExp(`\\b(?:i|we)(?:'m| am|'re| are)\\s+(${GERUND_ACTION_PATTERN})\\b`, 'i'),
+  /\b(?:i|we)(?:'ll| will)\s+have\b/i,
+  /\b(?:i|we)\s+got\s+(?:this|it|the|that|[A-Za-z0-9#@<])/i,
+  /\btaking\s+(?:this|the|that|[A-Za-z0-9#@<])/i,
 ];
 
 const TIMELINE_PATTERN_TEXT = [
@@ -193,6 +205,10 @@ export function detectCommitment(text) {
     return true;
   }
 
+  if (NATURAL_OWNERSHIP_PATTERNS.some((pattern) => hasNaturalOwnershipCommitment(pattern, normalizedText))) {
+    return true;
+  }
+
   return STARTER_ACTION_PATTERNS.some((pattern) => {
     const match = pattern.exec(normalizedText);
     if (!match) {
@@ -207,4 +223,19 @@ export function detectCommitment(text) {
     const action = match[1] ?? '';
     return allowsImplicitTarget(action) && hasTimeline(remainingText);
   });
+}
+
+/**
+ * @param {RegExp} pattern
+ * @param {string} text
+ * @returns {boolean}
+ */
+function hasNaturalOwnershipCommitment(pattern, text) {
+  const match = pattern.exec(text);
+  if (!match) {
+    return false;
+  }
+
+  const remainingText = text.slice(match.index + match[0].length);
+  return hasMeaningfulTarget(remainingText) || hasTimeline(remainingText);
 }

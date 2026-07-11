@@ -7,6 +7,7 @@ import {
   buildCommitmentConfirmedCard,
   buildCommitmentIgnoredCard,
 } from '../../../listeners/views/commitment-card.js';
+import { REALITY_CHECK_MICROCOPY } from '../../../services/reality-check-service.js';
 
 describe('commitment-card', () => {
   it('buildCommitmentCard creates a card with action buttons', () => {
@@ -16,15 +17,14 @@ describe('commitment-card', () => {
     const lines = blocks[0].text.text.split('\n');
     assert.deepStrictEqual(lines, [
       '⚓ *Potential commitment detected*',
-      'Fix Google Authentication before Friday',
       '>Ill fix Google Authentication before Friday.',
-      'Due: Friday  Similar authentication work usually takes ~1 day.',
+      'Due: Friday • Similar authentication work usually takes ~1 day.',
       'This looks very realistic.',
       '🐧 Low-key this timeline looks solid.',
     ]);
-    assert.strictEqual(lines.length, 6);
+    assert.strictEqual(lines.length, 5);
     assert.strictEqual([...blocks[0].text.text.matchAll(/\p{Extended_Pictographic}/gu)].length, 2);
-    assert.strictEqual([...lines[5].matchAll(/\p{Emoji_Presentation}/gu)].length, 1);
+    assert.strictEqual([...lines[4].matchAll(/\p{Emoji_Presentation}/gu)].length, 1);
     assert.doesNotMatch(blocks[0].text.text, /Confidence:/);
     assert.strictEqual(blocks[1].type, 'actions');
     assert.strictEqual(blocks[1].elements.length, 2);
@@ -40,11 +40,25 @@ describe('commitment-card', () => {
   it('buildCommitmentCard falls back for malformed Reality Check data', () => {
     const blocks = buildCommitmentCard('test text', null);
 
-    assert.strictEqual(blocks[0].text.text.split('\n').length, 6);
+    assert.strictEqual(blocks[0].text.text.split('\n').length, 5);
     assert.match(blocks[0].text.text, /Potential commitment detected/);
     assert.strictEqual(blocks[1].elements[0].text.text, 'Keep Date');
     assert.strictEqual(blocks[1].elements[1].text.text, 'Proceed Anyway');
     assert.strictEqual(blocks[1].elements[0].value, 'Commitment detected.');
+  });
+
+  it('keeps Reality Check microcopy to one approved single-emoji slang line', () => {
+    const blocks = buildCommitmentCard(
+      'test text',
+      buildRealityCheck({ microcopy: '🐧 Solid. 🔥 Extra emoji should not render.' }),
+    );
+    const lines = blocks[0].text.text.split('\n');
+    const slangLine = lines.at(-1);
+
+    assert.strictEqual(lines.length, 5);
+    assert.ok(REALITY_CHECK_MICROCOPY.includes(slangLine));
+    assert.strictEqual([...slangLine.matchAll(/\p{Emoji_Presentation}/gu)].length, 1);
+    assert.strictEqual([...blocks[0].text.text.matchAll(/\p{Extended_Pictographic}/gu)].length, 2);
   });
 
   it('buildCommitmentConfirmedCard builds a card for confirmed commitments', () => {

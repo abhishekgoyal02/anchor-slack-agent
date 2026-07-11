@@ -94,6 +94,13 @@ describe('detectCommitment', () => {
       'I can handle the migration',
       'Let me follow up with Design',
       "I'll test after work",
+      "I'm fixing the Google Authentication bug before Friday.",
+      "I'm taking the auth bug before Friday.",
+      "I'll have the login fix done by Friday.",
+      'My plan is to ship the deployment fix Monday.',
+      'I got the Google Authentication bug before Friday.',
+      'We are handling the release checklist this week.',
+      'Taking the deployment task for Monday.',
     ];
 
     for (const example of examples) {
@@ -190,6 +197,9 @@ describe('detectCommitment', () => {
       'Who owns authentication?',
       'Who is working on authentication?',
       'Whats blocking release?',
+      'Who is handling authentication?',
+      'What is blocking release?',
+      'List today commitments',
       'ask anchor',
       'context snapshot',
       'loop closure',
