@@ -9,7 +9,7 @@ import { getRandomRealityCheckMicrocopy, REALITY_CHECK_MICROCOPY } from '../../s
 export function buildCommitmentCard(_messageText, realityCheck) {
   const safeRealityCheck = normalizeRealityCheck(realityCheck);
   const text = [
-    '⚓ *Potential commitment detected*',
+    '🧠 *Reality Check found a commitment.*',
     `>${safeRealityCheck.originalText}`,
     `Due: ${safeRealityCheck.dueDateLabel} • ${safeRealityCheck.analysisText}`,
     safeRealityCheck.recommendationText,

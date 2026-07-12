@@ -1,83 +1,87 @@
 # Anchor
 
-Anchor is a Slack Bolt application that uses Google Gemini for AI responses, detects commitments in Slack conversations, stores commitments in SQLite, creates GitHub issues, and keeps Slack messages in sync with GitHub issue status.
+Slack-native commitment tracking for teams. Anchor detects commitments in conversations, confirms them with Reality Check, creates GitHub issues, and closes the loop when work is completed.
 
-Gemini is the only AI provider used by this project.
+![Anchor demo](assets/demo.gif)
 
-## App Overview
+## Documentation
 
-Anchor supports these Slack entry points:
+System overview and internal architecture:
 
-* **App Home** - Displays a welcome message.
-* **Direct Messages** - Responds to user messages in Slack DMs.
-* **Channel @mentions** - Responds in thread when mentioned in a channel.
-* **Assistant Panel** - Provides suggested prompts for Slack assistant threads.
-* **Confirmation Cards** - Shows commitment confirmation cards before creating GitHub issues.
+**[Anchor Architecture](architecture.md)** - Slack, Bolt JS, Reality Check, Context Snapshot, Ask Anchor, Loop Closure, GitHub, SQLite, Gemini, and MCP.
+
+## Quick Start
+
+```bash
+git clone https://github.com/YOUR_USERNAME/anchor.git
+cd anchor
+npm install
+cp .env.sample .env
+npm start
+```
+
+Fill `.env` with Slack, Gemini, and GitHub credentials before starting the app.
+
+## Usage
+
+1. Run Anchor in Slack Socket Mode with `npm start`.
+2. Send a message that contains a clear work commitment.
+3. Review the Reality Check card and confirm the commitment.
+4. Anchor stores the commitment locally and creates a linked GitHub issue.
+5. Ask Anchor about open work, owners, blockers, deadlines, or GitHub-linked commitments.
+6. Close the GitHub issue to trigger Loop Closure back in the original Slack thread.
+
+## Core Features
+
+- Slack commitment detection from natural conversation.
+- Reality Check confirmation before tracking work.
+- Context Snapshot generation for confirmed commitments.
+- GitHub issue creation and status synchronization.
+- Loop Closure messages when linked issues are completed.
+- Ask Anchor answers backed by local memory and MCP search tools.
+- SQLite persistence for commitments and sync metadata.
+
+## Architecture
+
+```text
+Slack
+  -> Bolt JS listeners
+  -> Anchor services
+  -> SQLite memory
+  -> GitHub issues
+  -> Gemini + MCP tools
+  -> Slack responses
+```
+
+Anchor keeps Slack as the user surface, SQLite as local commitment memory, GitHub as the issue tracker, and Gemini as the AI layer for analysis and assistant responses.
 
 ## Environment
 
-Create `.env` from `.env.sample` and configure the values needed for your runtime.
+Required for Socket Mode:
 
-Required Gemini configuration:
-
-```sh
+```bash
 GOOGLE_API_KEY=YOUR_GOOGLE_API_KEY
-GEMINI_MODEL=gemini-2.5-flash
-```
-
-Slack Socket Mode configuration:
-
-```sh
+GITHUB_TOKEN=YOUR_GITHUB_PERSONAL_ACCESS_TOKEN
+GITHUB_OWNER=YOUR_GITHUB_USERNAME_OR_ORGANIZATION
+GITHUB_REPO=YOUR_GITHUB_REPOSITORY
 SLACK_APP_TOKEN=YOUR_SLACK_APP_TOKEN
 SLACK_BOT_TOKEN=YOUR_SLACK_BOT_TOKEN
 ```
 
-GitHub issue creation and sync configuration:
+Optional runtime values are documented in `.env.sample`.
 
-```sh
-GITHUB_TOKEN=YOUR_GITHUB_PERSONAL_ACCESS_TOKEN
-GITHUB_OWNER=YOUR_GITHUB_OWNER
-GITHUB_REPO=YOUR_GITHUB_REPOSITORY
-SYNC_INTERVAL_MS=300000
+## Commands
+
+```bash
+npm start      # run the Slack app
+npm test       # run tests
+npm run lint   # run Biome checks
 ```
 
-OAuth HTTP mode is available through `app-oauth.js` when Slack app distribution is needed. Configure the optional OAuth values shown in `.env.sample`.
+## Tech Stack
 
-## Development
+Node.js, Slack Bolt JS, Google Gemini, SQLite, GitHub REST API, MCP tools, Biome, and the Node test runner.
 
-Install dependencies:
+## License
 
-```sh
-npm install
-```
-
-Start the Socket Mode app:
-
-```sh
-npm start
-```
-
-Run tests:
-
-```sh
-npm test
-```
-
-Run Biome:
-
-```sh
-npm run lint
-```
-
-## Project Structure
-
-* `app.js` - Socket Mode Slack app entry point.
-* `app-oauth.js` - Optional HTTP/OAuth Slack app entry point.
-* `listeners/` - Slack event, action, and view listeners.
-* `services/gemini-service.js` - Gemini client wrapper and text generation helper.
-* `services/commitment-detector.js` - Commitment detection.
-* `services/github-service.js` - GitHub issue operations.
-* `services/sync-service.js` - GitHub to Slack status sync.
-* `storage/commitment-store.js` - SQLite persistence.
-* `thread-context/` - Thread participation tracking.
-* `tests/` - Node test suite.
+[MIT](LICENSE)

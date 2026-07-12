@@ -66,7 +66,7 @@ export async function postCommitmentCard(say, text, threadTs, logger) {
   try {
     await say({
       blocks,
-      text: `⚓ Potential commitment detected: "${text}"`,
+      text: `🧠 Reality Check found a commitment. "${text}"`,
       thread_ts: threadTs,
     });
   } catch (error) {
