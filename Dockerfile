@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim
+FROM node:22-bookworm
 
 WORKDIR /app
 
@@ -6,15 +6,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     make \
     g++ \
-    && rm -rf /var/lib/apt/lists/*
+    libsqlite3-dev \
+ && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
 
-# Force Docker to invalidate the cache
-ARG CACHEBUST=1
-
-RUN rm -rf node_modules package-lock.json \
- && npm install
+RUN npm ci --build-from-source=sqlite3
 
 COPY . .
 
