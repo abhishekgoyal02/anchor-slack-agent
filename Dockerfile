@@ -6,12 +6,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     make \
     g++ \
-    libsqlite3-dev \
- && rm -rf /var/lib/apt/lists/*
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
 
-RUN npm ci --build-from-source=sqlite3
+ENV npm_config_build_from_source=sqlite3
+
+RUN npm ci
 
 COPY . .
 
