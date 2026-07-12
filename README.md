@@ -34,6 +34,8 @@ Anchor turns informal Slack promises into trackable work without asking the team
 
 **Loop Closure** watches linked GitHub issues and posts back to the original Slack thread when work is completed. The result is a closed feedback loop from conversation to issue to completion.
 
+**[More about anchor](https://anchor-webpage-omega.vercel.app/)** — Made with ❤️ by Abhishek Goyal
+
 ## Usage
 
 1. Run Anchor in Slack Socket Mode with `npm start`.
