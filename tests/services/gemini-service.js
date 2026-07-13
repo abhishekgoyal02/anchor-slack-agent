@@ -1095,6 +1095,59 @@ describe('gemini-service', () => {
       assert.doesNotMatch(response.text, /Nothing on|No commitments found/);
     });
 
+    it('falls back to direct commitment search when Gemini fails for overdue work', async () => {
+      const service = new GeminiService({
+        client: createThrowingGeminiClient(new Error('provider unavailable')),
+        model: 'mock-model',
+      });
+
+      const response = await service.generateTextWithTools('Show overdue work', {
+        mcpServer: createMockMcpServer({
+          handleToolRequest: async (request) => ({
+            ok: true,
+            result: [
+              {
+                title: String(request.input.query),
+                status: 'Open',
+                assignee: 'Alice',
+                createdAt: '2026-07-07 09:00:00',
+                updatedAt: '2026-07-08 10:30:00',
+                githubIssue: '20',
+              },
+            ],
+          }),
+        }),
+      });
+
+      assert.match(response.text, /^Overdue commitments:\n\n• \*\*Title:\*\* Show overdue work\./);
+      assert.strictEqual(response.toolCalls[0].name, 'search_commitments');
+      assert.deepStrictEqual(response.toolCalls[0].args, { query: 'Show overdue work' });
+    });
+
+    it('uses the direct commitment search fallback empty-state for missing topics', async () => {
+      const originalRandom = Math.random;
+      try {
+        Math.random = () => 0;
+        const service = new GeminiService({
+          client: createThrowingGeminiClient(new Error('provider unavailable')),
+          model: 'mock-model',
+        });
+
+        const response = await service.generateTextWithTools('Show commitment related to AWS or Kubernetes migration', {
+          mcpServer: createMockMcpServer({
+            handleToolRequest: async () => ({ ok: true, result: [] }),
+          }),
+        });
+
+        assert.strictEqual(
+          response.text,
+          '🐿 Nothing on **AWS or Kubernetes migration** right now. Looks like nobody has picked it up yet.',
+        );
+      } finally {
+        Math.random = originalRandom;
+      }
+    });
+
     it('formats release blocker answers without metadata dumps', async () => {
       const mockClient = createSequentialGeminiClient([
         { functionCalls: [{ name: 'search_commitments', args: { query: "What's blocking release?" } }] },
@@ -1412,6 +1465,20 @@ function createSequentialGeminiClient(responses, calls = []) {
       },
     },
   });
+}
+
+/**
+ * @param {Error} error
+ * @returns {any}
+ */
+function createThrowingGeminiClient(error) {
+  return {
+    models: {
+      generateContent: async () => {
+        throw error;
+      },
+    },
+  };
 }
 
 /**

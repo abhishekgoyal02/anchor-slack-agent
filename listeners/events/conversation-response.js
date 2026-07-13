@@ -92,14 +92,34 @@ async function buildCommitmentBlocksSafely(text, logger) {
 
 /**
  * Stream an assistant response with the existing feedback controls.
- * @param {Function} sayStream
+ * @param {Function | undefined} sayStream
  * @param {string} responseText
+ * @param {Function} [fallbackSay]
+ * @param {string} [threadTs]
+ * @param {import('../../mcp/logger.js').McpLogger} [logger]
  * @returns {Promise<void>}
  */
-export async function streamAssistantResponse(sayStream, responseText) {
-  const streamer = sayStream();
-  await streamer.append({ markdown_text: responseText });
-  await streamer.stop({ blocks: buildFeedbackBlocks() });
+export async function streamAssistantResponse(sayStream, responseText, fallbackSay, threadTs, logger) {
+  if (typeof sayStream === 'function') {
+    try {
+      const streamer = sayStream();
+      await streamer.append({ markdown_text: responseText });
+      await streamer.stop({ blocks: buildFeedbackBlocks() });
+      return;
+    } catch (error) {
+      logger?.warn?.('Failed to stream assistant response; falling back to say', serializeError(error));
+    }
+  }
+
+  if (typeof fallbackSay === 'function') {
+    await fallbackSay({
+      text: responseText,
+      thread_ts: threadTs,
+    });
+    return;
+  }
+
+  throw new TypeError('A Slack response method is required.');
 }
 
 /**

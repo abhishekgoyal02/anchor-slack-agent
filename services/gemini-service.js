@@ -310,6 +310,21 @@ export class GeminiService {
         throw error;
       }
 
+      const fallback = await generateSearchCommitmentFallbackAnswer(prompt, mcpServer, logger);
+      if (fallback) {
+        return {
+          text: fallback.text,
+          history: [
+            ...contents,
+            {
+              role: 'model',
+              parts: [{ text: fallback.text }],
+            },
+          ],
+          toolCalls: [...toolCalls, fallback.toolCall],
+        };
+      }
+
       const detail = error instanceof Error ? error.message : String(error);
       throw new GeminiServiceError(`Failed to generate Gemini tool-calling response: ${detail}`, {
         cause: error,
@@ -513,6 +528,48 @@ function formatSearchCommitmentToolAnswer(toolCalls, prompt) {
   });
 
   return lines.join('\n');
+}
+
+/**
+ * @param {string} prompt
+ * @param {import('../mcp/server.js').AnchorMcpServer} mcpServer
+ * @param {import('../mcp/logger.js').McpLogger} logger
+ * @returns {Promise<{ text: string, toolCall: GeminiToolCallTrace } | null>}
+ */
+async function generateSearchCommitmentFallbackAnswer(prompt, mcpServer, logger) {
+  if (!isCommitmentSearchFallbackPrompt(prompt)) {
+    return null;
+  }
+
+  const startedAt = Date.now();
+  logger.warn('Gemini tool-calling failed; trying direct commitment search fallback');
+  const toolResponse = await mcpServer.handleToolRequest({
+    toolName: 'search_commitments',
+    input: { query: prompt },
+  });
+  const toolCall = {
+    name: 'search_commitments',
+    args: { query: prompt },
+    response: toolResponse,
+    durationMs: Date.now() - startedAt,
+  };
+  const text = formatSearchCommitmentToolAnswer([toolCall], prompt);
+
+  return text ? { text, toolCall } : null;
+}
+
+/**
+ * @param {string} prompt
+ * @returns {boolean}
+ */
+function isCommitmentSearchFallbackPrompt(prompt) {
+  const normalized = normalizeAnswerQuery(prompt);
+
+  return (
+    /\b(?:commitments?|work|github|issues?|blockers?|ownership|owners?|owns?|owned|working on|deadlines?|due dates?|overdue|open|completed|today|todays|search|show|find|list)\b/.test(
+      normalized,
+    ) || isOwnershipAnswerQuery(normalized) || isBlockerAnswerQuery(normalized)
+  );
 }
 
 /**

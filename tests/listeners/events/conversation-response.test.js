@@ -5,6 +5,7 @@ import {
   getRandomOffDomainResponse,
   isOffDomainGeneralKnowledgePrompt,
   setThinkingStatus,
+  streamAssistantResponse,
 } from '../../../listeners/events/conversation-response.js';
 
 describe('conversation response helpers', () => {
@@ -41,6 +42,28 @@ describe('conversation response helpers', () => {
 
   it('does nothing when no status helper is available', async () => {
     await assert.doesNotReject(setThinkingStatus(undefined));
+  });
+
+  it('falls back to say when assistant streaming fails', async () => {
+    const messages = [];
+    const warnings = [];
+
+    await streamAssistantResponse(
+      () => {
+        throw new Error('stream unavailable');
+      },
+      'Search answer',
+      async (message) => {
+        messages.push(message);
+      },
+      '123.456',
+      {
+        warn: (message, context) => warnings.push({ message, context }),
+      },
+    );
+
+    assert.deepStrictEqual(messages, [{ text: 'Search answer', thread_ts: '123.456' }]);
+    assert.strictEqual(warnings[0].message, 'Failed to stream assistant response; falling back to say');
   });
 
   it('detects unrelated general knowledge prompts before Gemini routing', () => {

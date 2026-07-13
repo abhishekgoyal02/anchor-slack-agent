@@ -66,7 +66,7 @@ export async function handleMessage({ event, logger, say, sayStream, setStatus }
 
     const responseText = await generateResponse(text);
 
-    await streamAssistantResponse(sayStream, responseText);
+    await streamAssistantResponse(sayStream, responseText, say, threadTs, logger);
 
     sessionStore.setSession(channelId, threadTs, threadTs);
   } catch (e) {

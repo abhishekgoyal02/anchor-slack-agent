@@ -43,7 +43,7 @@ export async function handleAppMentioned({ event, logger, say, sayStream, setSta
 
     const responseText = await generateResponse(cleanedText);
 
-    await streamAssistantResponse(sayStream, responseText);
+    await streamAssistantResponse(sayStream, responseText, say, threadTs, logger);
 
     sessionStore.setSession(channelId, threadTs, threadTs);
   } catch (e) {
